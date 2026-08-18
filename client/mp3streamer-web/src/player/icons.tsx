@@ -41,3 +41,13 @@ export function NextIcon({ size = 24 }: IconProps) {
     </svg>
   );
 }
+
+export function DownloadIcon({ size = 24 }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 4v11" />
+      <polyline points="7,10 12,15 17,10" />
+      <path d="M5 19h14" />
+    </svg>
+  );
+}

@@ -217,6 +217,16 @@
   border-bottom: 1px solid var(--border);
 }
 
+.track-row {
+  /* Rows are tap/click targets (play, long-press-to-download on mobile),
+     not text — without this, a long-press reads as a text-selection
+     gesture and pops up the OS copy/select menu instead of our own
+     download prompt. */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
 .track-row:hover {
   background: var(--accent-bg);
   cursor: pointer;
@@ -395,6 +405,13 @@
   gap: 24px;
 }
 
+.fullscreen-header {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: 340px;
+}
+
 .fullscreen-main {
   display: flex;
   flex-direction: column;
@@ -509,6 +526,11 @@
     overflow-y: auto;
   }
 
+  .fullscreen-header {
+    max-width: none;
+    margin-bottom: 4px;
+  }
+
   .fullscreen-main {
     flex-direction: row;
     align-items: center;
@@ -572,6 +594,21 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 4px;
+}
+
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-h);
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.download-link:hover {
+  background: var(--accent-bg);
 }
 
 .playlist-panel {
@@ -715,7 +752,8 @@
 
   .col-artist,
   .col-album,
-  .col-rating {
+  .col-rating,
+  .col-download {
     display: none;
   }
 

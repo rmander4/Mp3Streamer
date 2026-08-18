@@ -105,6 +105,10 @@ export function streamUrl(trackId: number): string {
   return `/api/tracks/${trackId}/stream`;
 }
 
+export function downloadUrl(trackId: number): string {
+  return `/api/tracks/${trackId}/download`;
+}
+
 export function artworkUrl(trackId: number): string {
   return `/api/tracks/${trackId}/artwork`;
 }

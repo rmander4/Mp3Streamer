@@ -14,6 +14,154 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-18 — Ryan (5)
+
+- Added real track pre-buffering, replacing reliance on the browser's
+  default `<audio>` streaming behavior (which only keeps a small rolling
+  buffer ahead of playback, not enough to survive more than a brief
+  network hiccup). Motivated by Ryan's actual goal for this project:
+  listening from **outside** the LAN, where the connection is expected to
+  be less reliable than at home.
+  - New `player/bufferTrack.ts`: before playback starts, fetches the whole
+    track into an in-memory Blob if it's ≤5 minutes, otherwise just the
+    first 5 minutes (a 1-byte `Range: bytes=0-0` request first reveals the
+    file's total size via `Content-Range`, then a real range request pulls
+    the target prefix — no backend changes needed, `/stream` already
+    supported range requests). `NowPlayingBar` plays from the resulting
+    Blob URL instead of streaming directly.
+  - For tracks over the cap, once playback nears the end of the buffered
+    portion, `NowPlayingBar` hands off to normal live streaming (swaps
+    `<audio>` src to the network URL, resumes at the same `currentTime`) —
+    so only the first 5 minutes is drop-resistant, and the rest streams
+    normally same as before. This was Ryan's explicit call ("5 minutes or
+    whole song, whichever comes first") rather than buffering an hour-long
+    track entirely.
+  - Hit and fixed a real bug during testing: a truncated mp3 Blob's
+    `audio.duration` reported the *original full track's* length (989s for
+    a 5-minute-truncated 16:29 track), not the actual playable content —
+    caused by a VBR header (Xing) near the start of the file declaring the
+    whole file's duration, which the browser trusts over the Blob's actual
+    byte length. Fixed by having `bufferTrack` return its own
+    `bufferedSeconds` estimate and using *that* (never `audio.duration`)
+    to decide when to hand off. Documented in `CLAUDE.md` under Key
+    decisions & gotchas since it's a non-obvious trap.
+  - Also hit and fixed a second bug: initially wired the handoff's stall
+    /safety-net fallback to the `<audio>` element's `waiting`/`stalled`
+    events unconditionally, and it fired a false-positive handoff ~9
+    seconds into a fresh long-track buffer (well before real data could
+    have run out) — those events fire for brief, benign reasons too, not
+    just genuine data exhaustion. Fixed by only trusting them once
+    playback is already near the expected buffered-cushion cutoff.
+  - Verified end-to-end in-browser: a short track (3:24) buffers entirely
+    (confirmed via a single plain `200 OK` fetch, no `Range` header, and
+    `audio.duration` matching exactly once loaded from the Blob); a long
+    track (16:29) buffers only the first ~5 minutes (confirmed via the
+    two-request `206`/`206` pattern) and correctly hands off to live
+    streaming when scrubbed near the cutoff, resuming playback from the
+    network mid-song with no interruption.
+
+## 2026-08-18 — Ryan (4)
+
+- Added the Settings (⋮) trigger to the **Now Playing Screen** — it was only
+  reachable from the main browse screen before, with no way to change theme
+  or toggle full screen while the full-screen player was open. Placed as a
+  small top-right button above the artwork (`.fullscreen-header`, right
+  above `.fullscreen-main`), reusing the same `.settings-trigger` styling
+  and the same `SettingsPanel` component/modal already used elsewhere, so
+  it behaves identically (including in landscape, where the header stretches
+  full-width above the side-by-side art/controls layout). Verified in
+  portrait: no overlap with the artwork (button bottom ~y71, art top ~y95),
+  panel opens/closes correctly on top of the full-screen player. Confirmed
+  good by Ryan on his phone.
+
+## 2026-08-18 — Ryan (3)
+
+- Investigated a report that the **Light** theme "wasn't really light." Confirmed
+  via computed styles in a desktop browser that `ThemeContext`/`index.css` were
+  already correct (white bg, dark text, no hardcoded colors anywhere) — not an
+  app bug. Root cause, found by comparing phone screenshots of Light vs. Dark
+  side by side: they rendered **pixel-identical**, which pointed at the browser
+  itself rather than the page. It was **Samsung Internet's "Dark mode for
+  websites" setting**, forcibly darkening the page on top of whatever the site
+  set. Disabling it in Samsung Internet (Settings → Useful features → Dark
+  mode) fixed it — confirmed by Ryan.
+  - Still made one real hardening change: `ThemeContext.tsx` now sets
+    `document.documentElement.style.colorScheme` to the specific active value
+    (`light` / `dark`) instead of leaving the unconditional `light dark` from
+    `index.css`, since some forced-dark browser engines use an ambiguous
+    `light dark` declaration as a signal to just follow the OS theme instead
+    of respecting the page's explicit choice. Didn't fix this particular case
+    (a browser-level toggle, not a heuristic), but is a reasonable defense
+    against similar issues elsewhere.
+  - Worth remembering for next time this comes up (with Ryan's brother, or
+    anyone else): if a "theme looks wrong" report ever shows the *same*
+    rendering for two different theme selections, suspect the browser's own
+    forced-dark feature before touching app CSS.
+
+## 2026-08-18 — Ryan (2)
+
+- Replaced the fixed-interval polling library scan
+  (`LibraryScanBackgroundService`, every `LibraryScanIntervalMinutes`) with
+  `FileSystemWatcher`-based live updates (`LibraryWatcherService`). Dropping
+  a new folder into a `LibraryRootPaths` directory now gets picked up within
+  a couple seconds instead of waiting for the next timer tick — verified by
+  copying a test mp3 into a brand-new subfolder while the server was running
+  and confirming it appeared via `/api/tracks` shortly after, then confirming
+  removal was picked up the same way.
+  - Runs one full scan on startup (unchanged behavior), then watches each
+    configured root recursively (`IncludeSubdirectories = true`) for
+    create/delete/change/rename, debouncing bursts of events (e.g. copying
+    a whole album) into a single rescan 2 seconds after the last change.
+  - Added a periodic health check (every 1 minute) that verifies each
+    watcher is still connected and reconnects it if not — covers cases like
+    a network share or external drive dropping and remounting, where the
+    watcher's underlying handle can go stale without necessarily raising an
+    `Error` event. Also picks up root paths that didn't exist at startup but
+    became available later, and drops watchers for roots that disappear.
+  - Removed `LibraryScanIntervalMinutes` from `appsettings.json` — no
+    longer used, since there's no timer left to configure.
+  - `POST /api/library/scan` (manual trigger) is untouched.
+  - Also from this session: got the app running end-to-end on Ryan's own
+    machine for the first time via Claude Code — neither the .NET 10 SDK
+    nor Node.js were actually present in the Claude Code sandbox despite
+    earlier notes, so both were installed via `winget`
+    (`Microsoft.DotNet.SDK.10`, `OpenJS.NodeJS.LTS`) with Ryan's OK. Built
+    the frontend, copied `dist/` into `wwwroot/`, ran the backend bound to
+    `0.0.0.0:5288`, and pointed `LibraryRootPaths` at the `Music/` folder,
+    which already had the 184-track Iced Earth discography from earlier
+    testing sitting in it. Generated a QR code (PNG, via a scratch `qrcode`
+    npm script) encoding the LAN URL so Ryan could scan it from his phone
+    instead of typing the IP in by hand.
+
+## 2026-08-18 — Ryan
+
+- Ryan switched from his work Claude account to his own personal Pro
+  account for this project going forward — same person, different Claude
+  session/account. Noting it here in case the account switch is confusing
+  context in a future session.
+- Verified the project builds cleanly from a fresh checkout:
+  - **Frontend**: `npm install` (27 packages, 0 vulnerabilities) then
+    `npm run build` (`tsc -b && vite build`) both succeeded, producing
+    `dist/` (~209 KB JS / ~11 KB CSS, ~65 KB gzipped total). Confirmed in
+    an isolated sandbox environment, not Ryan's actual machine.
+  - **Backend**: could *not* be restored/built in that same sandbox — its
+    network egress blocks `api.nuget.org` (403 at the proxy level), while
+    npm's registry is allowed through. This is an environment limitation
+    of the sandbox used to check this, not a problem with the code or
+    `.csproj`. Backend should restore/build normally on a machine with
+    ordinary internet access (i.e. Ryan's actual PC) — worth a quick
+    `dotnet build` there to double-confirm, but no code changes were
+    needed or made.
+- Added `DEPENDENCIES.md` at the project root: a full inventory of every
+  build/runtime dependency (.NET 10 SDK, the 5 NuGet packages, Node +
+  the npm package list, SQLite, config) — written in response to Ryan
+  wanting an eventual one-click installer for setting this up on other
+  computers. This is groundwork/documentation only — **no installer was
+  built**, it's now roadmap item 6 in `CLAUDE.md`.
+- Updated `CLAUDE.md`: added the installer as roadmap item 6, and fixed
+  the "Not yet done: version control" section, which was stale — the repo
+  is already in git and pushed to `rmander4/Mp3Streamer` on GitHub.
+
 ## 2026-08-17 — Ryan
 
 - Added a **Rating** column to the desktop track table (`TrackList`), shown

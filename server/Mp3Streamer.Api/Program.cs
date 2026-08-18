@@ -11,7 +11,7 @@ builder.Services.AddDbContext<LibraryDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Library")));
 
 builder.Services.AddScoped<LibraryScanner>();
-builder.Services.AddHostedService<LibraryScanBackgroundService>();
+builder.Services.AddHostedService<LibraryWatcherService>();
 
 builder.Services.AddCors(options =>
 {

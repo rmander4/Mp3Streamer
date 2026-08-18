@@ -62,6 +62,10 @@ real album, and from a phone over the LAN):
 - `Services/LibraryScanner.cs` — recursively scans `LibraryRootPaths`
   (from config) for `.mp3` files, reads ID3 tags via TagLibSharp, upserts
   changed tracks and removes DB rows for files no longer on disk
+- `Services/LibraryWatcherService.cs` — `FileSystemWatcher`-based background
+  service; runs one scan on startup, then rescans (debounced) whenever the
+  library folders change, plus a periodic health check that reconnects any
+  watcher that's gone stale
 - `Endpoints/LibraryEndpoints.cs` — `/api/tracks` (search/filter/paginate),
   `/api/artists`, `/api/albums`, `/api/genres` (facets),
   `/api/tracks/{id}/stream` (range-enabled), `/api/tracks/{id}/artwork`
@@ -75,6 +79,9 @@ real album, and from a phone over the LAN):
 - `components/` — `Sidebar`, `TrackList`, `AlbumGrid`, `FacetList`,
   `SearchBar`, `PlaylistPanel`, `SettingsPanel`
 - `player/PlayerContext.tsx` — queue/currentIndex/isPlaying via React Context
+- `player/bufferTrack.ts` — pre-buffers a track into an in-memory Blob before
+  playback starts (whole file if ≤5 min, else just the first 5 min), so a
+  temporary connection drop doesn't interrupt playback
 - `player/NowPlayingBar.tsx` — the Mini Player; tapping it on a touch device
   (`pointer: coarse`) or narrow viewport opens `FullScreenPlayer`
 - `player/FullScreenPlayer.tsx` — the Now Playing Screen; CSS reflows it to
@@ -103,6 +110,14 @@ Worth knowing before you re-discover these the hard way:
   seconds into playback. The `<audio>` element's native `play`/`pause`
   events are the single source of truth for `isPlaying`; buttons call
   `audioRef.current.play()/pause()` imperatively instead.
+- **A truncated mp3 Blob's `audio.duration` can report the *original* full
+  file's length, not the actual bytes present.** Discovered building the
+  buffering feature below: many mp3s carry a VBR header (e.g. Xing) near
+  the start declaring the whole file's duration, which the browser trusts
+  even when the Blob only physically contains a truncated prefix of the
+  file. `bufferTrack.ts` returns its own `bufferedSeconds` estimate for
+  exactly this reason — never trust `audio.duration` to reflect how much of
+  a partially-buffered track is actually playable.
 - **Mobile detection uses `(pointer: coarse), (max-width: 700px)`**, not
   just `max-width` — a phone held in landscape is often wider than 700px,
   so width alone misses it.
@@ -113,11 +128,16 @@ Worth knowing before you re-discover these the hard way:
 
 - ✅ Per-track 5-star ratings — persisted into the mp3's ID3v2 POPM frame
   (not just the DB), see `RatingMapper` and `PUT /api/tracks/{id}/rating`.
-- ✅ Periodic background library scanning (`LibraryScanBackgroundService`,
-  default every 5 min, configurable via `LibraryScanIntervalMinutes`) — also
-  covers scan-on-startup, since the first tick runs immediately. Before
-  this, the library only updated when something explicitly called
-  `POST /api/library/scan`.
+- ✅ Automatic library updates via `LibraryWatcherService` — a
+  `FileSystemWatcher` per `LibraryRootPaths` entry triggers a debounced
+  rescan whenever files change (drop in a new folder and it shows up within
+  seconds), plus one scan on startup. Replaced an earlier fixed-interval
+  polling timer (`LibraryScanBackgroundService` /
+  `LibraryScanIntervalMinutes`, both removed 2026-08-18) — polling is gone
+  entirely now, not just supplemented. A periodic health check (every
+  minute) reconnects any watcher whose underlying handle has gone stale
+  (e.g. a network share or external drive dropping and coming back).
+  `POST /api/library/scan` still exists for a manual on-demand trigger.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 
@@ -127,14 +147,22 @@ Worth knowing before you re-discover these the hard way:
    TagLibSharp)
 3. iTunes Library XML import as an alternative to the filesystem scanner
 4. A system tray app wrapping the backend, with a configuration UI (GUI
-   settings prompt) for things like `LibraryRootPaths` and
-   `LibraryScanIntervalMinutes` instead of hand-editing `appsettings.json`.
-   Not started — noted 2026-08-17 so config stays in mind as something a
-   future settings UI will read/write, not just a file to hand-edit forever.
+   settings prompt) for things like `LibraryRootPaths` instead of
+   hand-editing `appsettings.json`. Not started — noted 2026-08-17 so config
+   stays in mind as something a future settings UI will read/write, not
+   just a file to hand-edit forever.
 5. Authentication, then remote/internet access via a Cloudflare Tunnel + a
    purchased domain — this was explicitly deferred until the LAN-only
    experience was solid. **Do not expose this app to the internet without
    auth in front of it.**
+6. A simple one-click **installer** so Ryan can set this up on another
+   computer without hand-installing prerequisites — noted 2026-08-18. Likely
+   shape: ship a pre-built frontend (`dist/`) plus a self-contained backend
+   publish (`dotnet publish -r win-x64 --self-contained`) so no .NET/Node
+   install is required on the target machine, prompt for the music library
+   path(s) on first run, and consider pairing this with item 4's tray app.
+   See `DEPENDENCIES.md` (added the same day) for the full list of what an
+   installer would need to handle.
 
 Ryan's brother runs his own copy of this app against his own music
 library — a separate local instance, not a connection to Ryan's running
@@ -172,9 +200,10 @@ or at a real library path once one is decided.
   (EOL) and got Node 24 LTS installed side-by-side via nvm-windows — nothing
   was removed, so this doesn't necessarily apply to a different machine.
 
-## Not yet done: version control
+## Version control
 
-This project isn't in git yet. Before sharing it with anyone else, it should
-go into a repo (e.g. a private GitHub repo) — passing files around directly
-doesn't scale past one person, and this file is most useful when it travels
-with the code automatically.
+In git, pushed to a private GitHub repo (`rmander4/Mp3Streamer`) — done as
+of 2026-08-18 (this section previously said "not yet done"; that's now
+stale). Also see `DEPENDENCIES.md` at the project root for a full inventory
+of build/runtime dependencies, kept as a reference for the future installer
+(roadmap item 6 above).

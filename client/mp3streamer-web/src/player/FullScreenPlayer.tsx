@@ -4,10 +4,12 @@ import { artworkUrl } from '../api/client';
 import { formatDuration } from '../utils/format';
 import { StarRating } from './StarRating';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from './icons';
+import { SettingsPanel } from '../components/SettingsPanel';
 
 interface FullScreenPlayerProps {
   track: Track;
   isPlaying: boolean;
+  isBuffering: boolean;
   currentTime: number;
   duration: number;
   onSeek: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -27,6 +29,7 @@ const DISMISS_THRESHOLD = 90;
 export function FullScreenPlayer({
   track,
   isPlaying,
+  isBuffering,
   currentTime,
   duration,
   onSeek,
@@ -39,6 +42,7 @@ export function FullScreenPlayer({
   const remaining = Math.max(duration - currentTime, 0);
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const dragState = useRef<{ startX: number; startY: number; isLandscape: boolean } | null>(null);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLImageElement>) => {
@@ -85,6 +89,11 @@ export function FullScreenPlayer({
 
   return (
     <div className="fullscreen-player">
+      <div className="fullscreen-header">
+        <button className="settings-trigger" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+          ⋮
+        </button>
+      </div>
       <div className="fullscreen-main">
         <img
           className="fullscreen-art"
@@ -118,7 +127,10 @@ export function FullScreenPlayer({
           <div className="fullscreen-info">
             <div className="fullscreen-title">{track.title}</div>
             <div className="fullscreen-subtitle">{track.album ?? 'Unknown'}</div>
-            <div className="fullscreen-subtitle">{track.artist ?? 'Unknown'}</div>
+            <div className="fullscreen-subtitle">
+              {track.artist ?? 'Unknown'}
+              {isBuffering ? ' · Buffering…' : ''}
+            </div>
           </div>
 
           <StarRating rating={track.rating} onRate={onRate} />
@@ -136,6 +148,8 @@ export function FullScreenPlayer({
           </div>
         </div>
       </div>
+
+      {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   );
 }

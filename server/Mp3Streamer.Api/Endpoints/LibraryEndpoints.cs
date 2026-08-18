@@ -101,6 +101,15 @@ public static class LibraryEndpoints
             return Results.File(track.FilePath, "audio/mpeg", enableRangeProcessing: true);
         });
 
+        app.MapGet("/api/tracks/{id:int}/download", async (int id, LibraryDbContext db) =>
+        {
+            var track = await db.Tracks.FindAsync(id);
+            if (track is null || !File.Exists(track.FilePath))
+                return Results.NotFound();
+
+            return Results.File(track.FilePath, "audio/mpeg", fileDownloadName: BuildDownloadFileName(track));
+        });
+
         app.MapPut("/api/tracks/{id:int}/rating", async (int id, SetRatingRequest request, LibraryDbContext db) =>
         {
             if (request.Rating < 0 || request.Rating > 5)
@@ -137,5 +146,19 @@ public static class LibraryEndpoints
 
             return Results.File(picture.Data.Data, string.IsNullOrWhiteSpace(picture.MimeType) ? "image/jpeg" : picture.MimeType);
         });
+    }
+
+    private static string BuildDownloadFileName(Track track)
+    {
+        var name = string.IsNullOrWhiteSpace(track.Artist)
+            ? track.Title ?? "track"
+            : $"{track.Artist} - {track.Title}";
+
+        foreach (var c in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(c, '_');
+        }
+
+        return $"{name}.mp3";
     }
 }

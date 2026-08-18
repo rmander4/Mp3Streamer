@@ -25,6 +25,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       document.documentElement.setAttribute('data-theme', theme);
     }
+    // Declaring the specific active scheme (instead of the default "light
+    // dark" from index.css) is a stronger hint to mobile browsers with a
+    // "force dark web content" feature (e.g. Samsung Internet, some Chrome
+    // builds) that this page has an explicit choice and shouldn't be
+    // auto-darkened on top of it.
+    document.documentElement.style.colorScheme = theme === 'system' ? 'light dark' : theme;
   }, [theme]);
 
   const setTheme = useCallback((next: Theme) => {

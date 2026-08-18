@@ -4,9 +4,17 @@ import { artworkUrl, setTrackRating, streamUrl } from '../api/client';
 import { formatDuration } from '../utils/format';
 import { FullScreenPlayer } from './FullScreenPlayer';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from './icons';
+import { bufferTrack } from './bufferTrack';
 
 // A touch device (any orientation/width) or a narrow desktop window counts as "mobile" here.
 const MOBILE_QUERY = '(pointer: coarse), (max-width: 700px)';
+
+// How close to the end of the pre-buffered portion (in seconds) to trigger
+// the handoff to live network streaming for tracks longer than the buffer
+// cap — early enough that the swap's own brief loading gap doesn't cause an
+// audible stall, and generous enough to absorb bufferTrack's byte-to-seconds
+// estimate being a little optimistic (see bufferedSeconds in bufferTrack.ts).
+const HANDOFF_LEAD_SECONDS = 5;
 
 export function NowPlayingBar() {
   const { currentTrack, isPlaying, setIsPlaying, setCurrentTrackRating, next, previous } = usePlayer();
@@ -14,21 +22,105 @@ export function NowPlayingBar() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
-  // Selecting a track (including re-selecting the current one) should (re)start playback.
-  // The <audio> element's own play/pause events are the source of truth for isPlaying,
-  // so we drive playback imperatively here rather than reacting to isPlaying itself.
+  const blobUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const isPartialRef = useRef(false);
+  const bufferedSecondsRef = useRef(0);
+  const handoffDoneRef = useRef(false);
+
+  // Selecting a track (including re-selecting the current one) pre-buffers
+  // it (the whole file, or the first few minutes for a long track — see
+  // bufferTrack.ts) into memory before starting playback, so a temporary
+  // connection drop mid-song doesn't interrupt it. The <audio> element's
+  // own play/pause events remain the source of truth for isPlaying; we
+  // drive playback imperatively here rather than reacting to isPlaying.
   useEffect(() => {
     setCurrentTime(0);
-    setDuration(0);
-    audioRef.current?.play().catch(() => {
-      /* autoplay may be blocked until the user interacts with the page again */
-    });
+    isPartialRef.current = false;
+    bufferedSecondsRef.current = 0;
+    handoffDoneRef.current = false;
+
+    abortRef.current?.abort();
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+
+    if (!currentTrack) {
+      setDuration(0);
+      return;
+    }
+
+    // The API's own duration (from the file's ID3 tags) is accurate and
+    // available immediately — no need to wait on the audio element's own
+    // metadata, which would otherwise briefly reflect only the buffered
+    // portion's (shorter) duration for a partially-buffered long track.
+    setDuration(currentTrack.durationSeconds);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsBuffering(true);
+
+    bufferTrack(currentTrack, controller.signal)
+      .then(({ blobUrl, isPartial, bufferedSeconds }) => {
+        blobUrlRef.current = blobUrl;
+        isPartialRef.current = isPartial;
+        bufferedSecondsRef.current = bufferedSeconds;
+        const audio = audioRef.current;
+        if (!audio) return;
+        audio.src = blobUrl;
+        audio.play().catch(() => {
+          /* autoplay may be blocked until the user interacts with the page again */
+        });
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        console.error('Failed to pre-buffer track, falling back to direct streaming', err);
+        const audio = audioRef.current;
+        if (audio) {
+          audio.src = streamUrl(currentTrack.id);
+          audio.play().catch(() => {});
+        }
+      })
+      .finally(() => setIsBuffering(false));
+
+    return () => controller.abort();
   }, [currentTrack?.id]);
+
+  // Final safety net for a genuine component unmount (not just a track
+  // change, which the effect above already cleans up after itself).
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    };
+  }, []);
 
   if (!currentTrack) {
     return null;
   }
+
+  // Switches the <audio> element from the pre-buffered blob to live network
+  // streaming, resuming at `resumeAt` — used both when the buffered cushion
+  // naturally runs out (see handleTimeUpdate) and if the user manually
+  // seeks past the buffered portion of a long track.
+  const swapToLiveStream = (resumeAt: number) => {
+    const audio = audioRef.current;
+    if (!audio || handoffDoneRef.current) return;
+    handoffDoneRef.current = true;
+    const oldBlobUrl = blobUrlRef.current;
+    blobUrlRef.current = null;
+    audio.src = streamUrl(currentTrack.id);
+    const onLoaded = () => {
+      audio.currentTime = resumeAt;
+      audio.play().catch(() => {});
+      audio.removeEventListener('loadedmetadata', onLoaded);
+      if (oldBlobUrl) URL.revokeObjectURL(oldBlobUrl);
+    };
+    audio.addEventListener('loadedmetadata', onLoaded);
+  };
 
   const togglePlayback = () => {
     const audio = audioRef.current;
@@ -40,11 +132,46 @@ export function NowPlayingBar() {
     }
   };
 
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    const audio = e.currentTarget;
+    setCurrentTime(audio.currentTime);
+
+    if (isPartialRef.current && !handoffDoneRef.current && audio.currentTime >= bufferedSecondsRef.current - HANDOFF_LEAD_SECONDS) {
+      swapToLiveStream(audio.currentTime);
+    }
+  };
+
+  // Safety net for bufferTrack's byte-to-seconds estimate coming in short —
+  // if playback genuinely runs out of buffered data before our predicted
+  // cutoff, the <audio> element stalls waiting for more (which will never
+  // arrive, since it's a static blob); hand off immediately rather than
+  // leaving playback stuck. `waiting`/`stalled` can also fire for brief,
+  // benign reasons unrelated to running out of data (seen firing seconds
+  // into fresh blob playback in testing), so only trust it as "ran out of
+  // buffered data" once we're already near the expected cutoff — well
+  // outside that window, the proactive check in handleTimeUpdate is what's
+  // supposed to catch it, so ignore the event instead of reacting to noise.
+  const handleStalled = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    const audio = e.currentTarget;
+    const nearExpectedCutoff = audio.currentTime >= bufferedSecondsRef.current - 20;
+    if (isPartialRef.current && !handoffDoneRef.current && nearExpectedCutoff) {
+      swapToLiveStream(audio.currentTime);
+    }
+  };
+
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const audio = audioRef.current;
     if (!audio) return;
     const value = Number(e.target.value);
-    audio.currentTime = value;
+
+    // Seeking past what's actually been buffered (only possible for a long
+    // track's partial buffer) needs the live-stream handoff immediately,
+    // rather than trying to seek within data that was never downloaded.
+    if (isPartialRef.current && !handoffDoneRef.current && value > bufferedSecondsRef.current - HANDOFF_LEAD_SECONDS) {
+      swapToLiveStream(value);
+    } else {
+      audio.currentTime = value;
+    }
     setCurrentTime(value);
   };
 
@@ -66,12 +193,12 @@ export function NowPlayingBar() {
       <div className="now-playing-bar" onClick={openFullScreenOnMobile}>
         <audio
           ref={audioRef}
-          src={streamUrl(currentTrack.id)}
           onEnded={next}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
-          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          onTimeUpdate={handleTimeUpdate}
+          onStalled={handleStalled}
+          onWaiting={handleStalled}
         />
         <img
           className="now-playing-art"
@@ -83,7 +210,10 @@ export function NowPlayingBar() {
         />
         <div className="now-playing-info">
           <div className="now-playing-title">{currentTrack.title}</div>
-          <div className="now-playing-artist">{currentTrack.artist ?? 'Unknown'}</div>
+          <div className="now-playing-artist">
+            {currentTrack.artist ?? 'Unknown'}
+            {isBuffering ? ' · Buffering…' : ''}
+          </div>
         </div>
         <div className="now-playing-controls" onClick={(e) => e.stopPropagation()}>
           <button onClick={previous} aria-label="Previous">
@@ -113,6 +243,7 @@ export function NowPlayingBar() {
         <FullScreenPlayer
           track={currentTrack}
           isPlaying={isPlaying}
+          isBuffering={isBuffering}
           currentTime={currentTime}
           duration={duration}
           onSeek={handleSeek}
