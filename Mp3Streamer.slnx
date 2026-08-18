@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/server/">
+    <Project Path="server/Mp3Streamer.Api/Mp3Streamer.Api.csproj" />
+  </Folder>
+</Solution>

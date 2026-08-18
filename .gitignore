@@ -1,0 +1,21 @@
+## .NET
+bin/
+obj/
+*.db
+*.db-shm
+*.db-wal
+server/Mp3Streamer.Api/wwwroot/
+
+## Node / Vite
+node_modules/
+dist/
+.vite/
+
+## Local test music (not for source control)
+/Music/
+
+## Editor / OS
+.vs/
+.idea/
+*.user
+.DS_Store

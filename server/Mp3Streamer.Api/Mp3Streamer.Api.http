@@ -1,0 +1,6 @@
+@Mp3Streamer.Api_HostAddress = http://localhost:5288
+
+GET {{Mp3Streamer.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

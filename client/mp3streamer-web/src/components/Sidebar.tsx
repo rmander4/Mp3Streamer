@@ -1,0 +1,45 @@
+import { useState } from 'react';
+import { SettingsPanel } from './SettingsPanel';
+
+export type ViewKey = 'all' | 'artists' | 'albums' | 'genres' | 'playlists';
+
+const VIEWS: { key: ViewKey; label: string }[] = [
+  { key: 'all', label: 'All Tracks' },
+  { key: 'artists', label: 'Artists' },
+  { key: 'albums', label: 'Albums' },
+  { key: 'genres', label: 'Genres' },
+  { key: 'playlists', label: 'Playlists' },
+];
+
+interface SidebarProps {
+  active: ViewKey;
+  onSelect: (view: ViewKey) => void;
+}
+
+export function Sidebar({ active, onSelect }: SidebarProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  return (
+    <nav className="sidebar">
+      <div className="sidebar-header">
+        <h1 className="sidebar-title">MP3 Streamer</h1>
+        <button className="settings-trigger" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+          ⋮
+        </button>
+      </div>
+      <ul>
+        {VIEWS.map((v) => (
+          <li key={v.key}>
+            <button
+              className={v.key === active ? 'nav-item active' : 'nav-item'}
+              onClick={() => onSelect(v.key)}
+            >
+              {v.label}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : null}
+    </nav>
+  );
+}
