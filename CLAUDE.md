@@ -61,7 +61,10 @@ real album, and from a phone over the LAN):
 - **Deployment**: LAN-only, no authentication (deliberate — see below). The
   backend serves the built frontend itself (single process, single port) so
   it's reachable from any device on the same Wi-Fi via the host machine's
-  LAN IP.
+  LAN IP. Runs as a **Windows Service** on Ryan's PC (`Mp3Streamer`, set up
+  2026-08-18/19) — always on, survives reboots, no dependency on a
+  terminal or Claude Code session being open. See "Running as a Windows
+  Service" below for the full setup and the redeploy workflow.
 
 ## Architecture
 
@@ -179,6 +182,12 @@ Worth knowing before you re-discover these the hard way:
   "a track was (re)selected" in the future, key off `selectionSeq`.
 - **No authentication in v1** — deliberate, since it's LAN-only. Don't wire
   up anything internet-facing without building auth first (see below).
+- **A published exe's `ContentRootPath` defaults to the current directory,
+  not the exe's own folder** — bites you the moment it's launched from
+  anywhere else (a different CWD, or a Windows Service, which always starts
+  in `System32`). Fixed by pinning `ContentRootPath = AppContext.BaseDirectory`
+  explicitly in `Program.cs`. Full story under "Running as a Windows
+  Service" below — don't remove that pin, the service depends on it.
 
 ## Done since the original plan
 
@@ -305,6 +314,11 @@ Worth knowing before you re-discover these the hard way:
     and rendered grayed-out/unclickable; restored the file, confirmed
     `isMissing` cleared back to `false` on the next scan; reset the
     toggle back to On afterward.
+- ✅ Runs as a permanent **Windows Service** (`Mp3Streamer`) on Ryan's PC —
+  survives reboots, no dependency on Claude Code or a terminal staying
+  open. See "Running as a Windows Service" above for full setup, the
+  redeploy workflow, and the `ContentRootPath` gotcha that came with it.
+  Deliberately stayed LAN-only (no Tailscale/Cloudflare Tunnel) per Ryan.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 
@@ -357,7 +371,7 @@ server. So none of the auth/remote-access work above is a blocker for
 sharing the code with him; it only matters if someone wants to reach a
 *running instance* over the internet.
 
-## Running it locally
+## Running it locally (dev)
 
 ```bash
 # Backend
@@ -379,6 +393,84 @@ npm run build
 A `Music/` folder at the project root (gitignored) holds test mp3s for local
 development. Point `appsettings.Development.json`'s `LibraryRootPaths` at it,
 or at a real library path once one is decided.
+
+## Running as a Windows Service (Ryan's actual deployment, since 2026-08-18/19)
+
+The backend runs permanently as a Windows Service named **`Mp3Streamer`** on
+Ryan's PC, rather than in a terminal — so it survives reboots and needs
+nothing running (no Claude Code, no open terminal) to stay up. Motivation,
+verbatim (2026-08-18): "when I close Claude, I want to still access the
+website." Chose a plain Windows Service over IIS — IIS is for reverse-
+proxying multiple sites; this is one single self-hosted Kestrel app, so a
+service is the simpler fit. Chose that over Tailscale/Cloudflare Tunnel
+(also discussed) because Ryan explicitly wants to **stay LAN-only**, not
+expose this to the internet.
+
+**What makes this work — three things, all necessary:**
+
+1. **`Microsoft.Extensions.Hosting.WindowsServices` + `UseWindowsService()`**
+   in `Program.cs` — wires up proper start/stop lifecycle handling with the
+   Service Control Manager when actually running as a service; a no-op
+   otherwise, so the exact same published exe still works fine run directly
+   (`dotnet run`, or double-clicking it) for local testing.
+2. **`ContentRootPath` pinned to `AppContext.BaseDirectory`** — also in
+   `Program.cs`, via `WebApplication.CreateBuilder(new WebApplicationOptions
+   { Args = args, ContentRootPath = AppContext.BaseDirectory })`. **This one
+   is critical and easy to skip**: Windows Services start with their working
+   directory set to `%SystemRoot%\System32`, not the exe's own folder — the
+   default `WebApplication.CreateBuilder(args)` resolves `ContentRootPath`
+   from the current directory, so without this fix the service would boot
+   with the *wrong* `appsettings.json` (or none at all) and a missing
+   `wwwroot`. Confirmed this personally the hard way while setting this up:
+   ran the published exe from the wrong directory and watched it silently
+   fall back to defaults (port 5000, empty `LibraryRootPaths`, a
+   freshly-created empty database) — looked like real data loss for a
+   minute until the actual cause (working directory, not the app or the
+   data) became clear. After the fix, confirmed it resolves correctly
+   *even when deliberately launched from the wrong directory*.
+3. **Absolute paths in `appsettings.json`** (the base/Production config —
+   services don't go through `launchSettings.json`, so there's no
+   `ASPNETCORE_ENVIRONMENT=Development` and no `--urls` flag to rely on):
+   - `"Urls": "http://0.0.0.0:5288"` — Kestrel reads this directly.
+   - `ConnectionStrings:Library` — full absolute path to the *existing*
+     `library.db` (not a fresh one), so all prior ratings/playlists/history
+     carry over instead of starting from an empty database.
+   - `LibraryRootPaths` — full absolute path to the real music folder.
+
+**One-time setup** (needs an elevated/Administrator PowerShell — Claude
+cannot self-elevate, so this step has to be run by Ryan or his brother
+directly, not by a Claude session):
+
+```powershell
+New-Service -Name "Mp3Streamer" -BinaryPathName "C:\...\server\Mp3Streamer.Api\publish\Mp3Streamer.Api.exe" -DisplayName "MP3 Streamer" -Description "Personal MP3 streaming server (LAN-only)" -StartupType Automatic
+Start-Service -Name "Mp3Streamer"
+```
+
+**Redeploying after making changes** — this is the part to actually repeat
+each time there's an update:
+
+```powershell
+# 1. Build the frontend and copy it into wwwroot (same as the dev workflow)
+cd client/mp3streamer-web
+npm run build
+# copy dist/* into server/Mp3Streamer.Api/wwwroot/
+
+# 2. Publish the backend (picks up the fresh wwwroot automatically)
+cd server/Mp3Streamer.Api
+dotnet publish -c Release -o publish
+
+# 3. Restart the service to pick up the new build (needs Administrator)
+Restart-Service -Name "Mp3Streamer"
+```
+
+Before step 3, make sure nothing else (e.g. a `dotnet run` left over from
+testing) is still bound to port 5288 — the service will fail to start and
+silently show `Status: Stopped` if the port's already taken, with no
+obvious error surfaced to `Get-Service`. Hit exactly this once: a leftover
+background test instance was still holding the port, `Start-Service`
+"succeeded" but immediately reverted to Stopped; killing the stray process
+first fixed it. `Get-Service -Name "Mp3Streamer"` to check status;
+`Stop-Service`/`Start-Service`/`Restart-Service` all need elevation too.
 
 ## Requirements
 

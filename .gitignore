@@ -5,6 +5,7 @@ obj/
 *.db-shm
 *.db-wal
 server/Mp3Streamer.Api/wwwroot/
+server/Mp3Streamer.Api/publish/
 
 ## Node / Vite
 node_modules/

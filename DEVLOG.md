@@ -14,6 +14,55 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-19 — Ryan (1)
+
+- Deployed the backend as a permanent Windows Service (`Mp3Streamer`) on
+  Ryan's PC, so it survives reboots and doesn't need Claude Code or any
+  terminal open — motivation, verbatim: "when I close Claude, I want to
+  still access the website." Chose a plain Windows Service over IIS
+  (overkill for one self-hosted app) and over Tailscale/Cloudflare Tunnel
+  (Ryan wants to stay LAN-only, not exposed to the internet).
+  - Added `Microsoft.Extensions.Hosting.WindowsServices` +
+    `builder.Host.UseWindowsService()` in `Program.cs`.
+  - Made `appsettings.json` self-sufficient with absolute paths (DB
+    connection string, `LibraryRootPaths`, and a new `"Urls"` key) since a
+    service doesn't go through `launchSettings.json` — no
+    `ASPNETCORE_ENVIRONMENT=Development`, no `--urls` flag.
+  - Hit a real scare mid-setup: testing the published exe, the scan
+    reported "114 removed" tracks. Turned out to be a **real, correct**
+    result — Ryan had deleted 8 albums' worth of files earlier and "Remove
+    Tracks That Do Not Exist" defaults to On — but before confirming that,
+    also hit a **second, genuinely broken** run moments later (wrong
+    working directory → wrong content root → silently fell back to
+    defaults, port 5000, empty `LibraryRootPaths`, a fresh empty
+    database) that looked identical to data loss at a glance. Root cause:
+    `WebApplication.CreateBuilder(args)` resolves `ContentRootPath` from
+    the current directory, and Windows Services always start in
+    `%SystemRoot%\System32` — not the exe's own folder. Fixed by pinning
+    `ContentRootPath = AppContext.BaseDirectory` explicitly. Verified the
+    fix by deliberately launching the exe from the wrong directory
+    afterward and confirming it still resolved everything correctly.
+  - `dotnet publish -c Release -o publish` for the actual deployed build
+    (not just `dotnet run` from source); added `publish/` to `.gitignore`.
+  - Installing/starting/stopping the service needs an elevated
+    (Administrator) PowerShell — Claude can't self-elevate, so that one
+    step has to be run by Ryan directly. Gave him the exact
+    `New-Service`/`Start-Service` commands.
+  - Hit one more real snag going live: `Start-Service` "succeeded" but the
+    service immediately showed `Status: Stopped` — a leftover background
+    test instance (from my own verification steps) was still bound to
+    port 5288, so the service's own Kestrel failed to bind and crashed on
+    startup with no obvious error surfaced to `Get-Service`. Killing the
+    stray process fixed it. Documented this in `CLAUDE.md`'s redeploy
+    workflow as a thing to check before every `Restart-Service`.
+  - Verified fully working end-to-end through the actual service
+    afterward: API responding with the correct live library, frontend
+    loading correctly in-browser. Startup Type is `Automatic`.
+  - Full setup + the redeploy workflow (`npm run build` → copy to
+    `wwwroot` → `dotnet publish` → `Restart-Service`) written up in
+    `CLAUDE.md` under "Running as a Windows Service" — that's the
+    reference for future deploys, not this entry.
+
 ## 2026-08-18 — Ryan (12)
 
 - Added a manual "Clear History" button, top-right of the History view —

@@ -3,7 +3,20 @@ using Mp3Streamer.Api.Data;
 using Mp3Streamer.Api.Endpoints;
 using Mp3Streamer.Api.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+// Windows Services start with the working directory set to
+// %SystemRoot%\System32, not the exe's own folder — pin ContentRootPath to
+// the exe's actual location so appsettings.json/wwwroot resolve correctly
+// no matter how (or from where) this gets launched.
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
+
+// No-ops when run normally (dotnet run, console); wires up proper start/stop
+// lifecycle handling with the Service Control Manager when actually running
+// as a Windows Service, so the same published exe works both ways.
+builder.Host.UseWindowsService();
 
 builder.Services.AddOpenApi();
 
