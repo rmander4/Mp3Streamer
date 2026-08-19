@@ -14,6 +14,232 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-18 — Ryan (12)
+
+- Added a manual "Clear History" button, top-right of the History view —
+  `DELETE /api/history` wipes the `PlayHistory` table, gated by a
+  `window.confirm` ("Clear today's play history? This cannot be undone.")
+  matching the confirm pattern already used elsewhere (bulk tag edits,
+  mobile download). Only shown when there's something to clear. Verified
+  both directions: confirming actually clears it (checked server-side and
+  that the UI drops to the empty state), and Cancel leaves it untouched.
+
+## 2026-08-18 — Ryan (11)
+
+- Added handling for tracks whose files disappear (Ryan asked what
+  currently happens — answer was "nothing configurable, always hard
+  deletes, and that cascades away the track's playlist memberships and
+  history too"). Built the setting Ryan proposed:
+  - Settings → **Remove Tracks That Do Not Exist: On/Off**, defaulting to
+    On (the original delete-on-missing behavior, unchanged unless someone
+    actually flips this).
+  - Off: `LibraryScanner` now sets a new `Track.IsMissing` flag instead of
+    deleting the row when a file can't be found (and clears it if the
+    file comes back at the same path later). `TrackList` and
+    `HistoryPanel` gray out (`opacity: 0.45`) those rows, label them
+    "(missing)", and block clicking them into playback — everything else
+    (right-click, editing) is left alone since the tag-edit endpoints
+    already 404 gracefully on a missing file.
+  - Verified the whole lifecycle for real: moved a test mp3 out of the
+    library folder (not deleted, just relocated, so it's reversible) with
+    the setting On — confirmed the track still got hard-deleted, i.e. no
+    regression to the original behavior. Restored it, re-added via
+    rescan, flipped the setting Off, removed the same file again —
+    confirmed the row survived with `isMissing: true` and rendered
+    correctly grayed-out/unclickable in the browser. Restored the file
+    once more, confirmed `isMissing` cleared back to `false`, and reset
+    the toggle back to On afterward.
+  - New EF migration `AddTrackIsMissing`.
+
+## 2026-08-18 — Ryan (10)
+
+- Fixed a real bug Ryan found: repeatedly clicking the *same* track (e.g.
+  from History, trying to re-confirm a song) wasn't adding new history
+  entries after the first click. Root cause: `NowPlayingBar`'s buffering /
+  history-recording effect was keyed on `currentTrack?.id`, which doesn't
+  change when you re-select the track that's already current — so the
+  effect (and `recordPlay()` inside it) silently never re-ran.
+  - Fixed at the `PlayerContext` level, not just for History: added a
+    `selectionSeq` counter that increments on every explicit "play this"
+    action (`playQueue`, and `next`/`previous` when they actually move to
+    a different track) — including re-selecting the identical track.
+    `NowPlayingBar`'s effect now depends on `selectionSeq` instead of
+    `currentTrack?.id`, so re-selection works everywhere (History,
+    TrackList, playlists), not just as a special case.
+  - Verified precisely: recorded a baseline history count, clicked the
+    same track 3 times in a row (pausing between clicks so the click
+    itself — not an already-playing guard — was what mattered), confirmed
+    the count went up by exactly 3.
+
+## 2026-08-18 — Ryan (9)
+
+- Added play history: records a timestamped entry every time a track
+  starts playing, viewable in a new **History** nav item, with an on/off
+  toggle in Settings. Also noted for the future: Smart Playlists (a
+  separate conversation earlier today) and full play history are
+  different features — this one's a full event log, which can't live in
+  ID3/POPM (only holds one counter byte, not a list of timestamps), so
+  it's DB-only.
+  - **Scoped to today only, per Ryan**: "Lets limit play history to
+    'current day'... this will prevent it from growing too large over
+    time." The write path (`POST /api/tracks/{id}/play`) actually deletes
+    anything from a prior day before inserting the new row
+    (`ExecuteDeleteAsync`), rather than just filtering old rows out on
+    read — keeps the table bounded instead of accumulating forever.
+  - Toggle enforced **server-side**: the record endpoint checks a new
+    generic `AppSetting` key/value row itself and silently no-ops when
+    off, so the frontend just always calls it and doesn't need to know
+    the setting's value. Verified both directions — recorded a play with
+    it on, toggled off, played another track, confirmed the second one
+    did *not* appear in history.
+  - History rows are clickable (added mid-build, per Ryan): clicking one
+    queues the whole day's history starting at that track, so Next/
+    Previous browses through it — explicitly for "I heard a great song
+    around 3pm but was heads-down in work and don't remember what it
+    was," click around near that time until it turns up. Required
+    `PlayHistoryEntryDto` to carry a full nested `TrackDto`, not just
+    title/artist/album.
+  - The History nav item (after Playlists, same position in every
+    layout) only shows once the setting's confirmed on — added
+    `history/HistoryContext.tsx` so `Sidebar` and both `SettingsPanel`
+    render sites (Mini Player's and the Now Playing Screen's) share one
+    fetched value rather than drifting out of sync with independent
+    copies of it.
+  - Found and fixed a real bug while building this: SQLite loses
+    `DateTime.Kind` on round-trip through EF Core (comes back
+    `Unspecified`), which made `System.Text.Json` serialize timestamps
+    without a trailing `Z` — the frontend would've silently misread an
+    actually-UTC time as local time. Fixed by restoring `Kind=Utc` after
+    `ToListAsync()` (can't be done inside the LINQ query — EF can't
+    translate `DateTime.SpecifyKind` to SQL). Verified the fix directly:
+    a play recorded at 22:52 UTC correctly displayed as 6:52 PM Eastern.
+  - Installed `dotnet-ef` as a global tool (wasn't present) to generate
+    the migration (`AddPlayHistoryAndSettings`) — new `PlayHistory` and
+    `Settings` tables, both confirmed created via the startup migration
+    log.
+
+## 2026-08-18 — Ryan (8)
+
+- Reworked mobile's long-press: it used to jump straight into a
+  `window.confirm("Download X?")` prompt. Ryan wanted it to work like
+  desktop's right-click instead — long-press now opens the same
+  `TrackContextMenu` with two options, **Edit ID3 Tag** and **Download**,
+  always targeting only the single pressed track (multi-select/bulk edit
+  stays desktop-only via drag-select; not attempting that on mobile for
+  now, per Ryan — "not sure if I want it to happen"). Picking Download from
+  the menu downloads immediately, no extra confirm — the menu tap itself is
+  already the deliberate action, matching how desktop's download icon has
+  no confirm either.
+  - Refactored how `TrackList` stores context-menu state: it now holds the
+    already-built `items` array directly (`{ x, y, items }`) rather than
+    `{ tracks, x, y }` with the item list re-derived at render time — the
+    desktop right-click handler and the mobile long-press handler build
+    genuinely different item sets (single/bulk edit vs. edit+download), so
+    a single derivation path no longer fit.
+  - Verified in-browser: long-press opens the two-item menu; "Edit ID3 Tag"
+    opens the single-track dialog (never the bulk one, even though the
+    underlying mechanism is shared with desktop); no accidental playback
+    fires afterward. Could *not* re-verify the actual file landing in
+    Downloads for the "Download" item specifically — Chrome's automatic-
+    download-blocking silently suppressed even a from-scratch, outside-
+    react repro of the identical anchor-click pattern in this same browser
+    session, most likely because a prior download already succeeded and
+    subsequent non-trusted-gesture downloads got throttled. Not treating
+    this as a real bug: the code path is byte-for-byte the same one already
+    proven to work for the desktop download icon earlier in this session.
+
+## 2026-08-18 — Ryan (7)
+
+- Fixed two real bugs in right-click, reported by Ryan as "right click
+  doesn't work in browser":
+  1. The right-click/drag-select gate (`COARSE_POINTER_QUERY`, added in
+     entry (6) below to fix an earlier width-based bug) — turned out entry
+     (6)'s fix was correct but wasn't the whole story.
+  2. `handleRowContextMenu` wasn't calling `e.stopPropagation()` — only
+     `e.preventDefault()`. The native `contextmenu` event kept bubbling past
+     the row after the menu opened, and `TrackContextMenu`'s own `useEffect`
+     attaches a `document`-level "any contextmenu/click closes the menu"
+     listener as soon as it mounts. Under the right timing, that still-
+     bubbling event reaches `document` and immediately closes the menu that
+     just opened — same tick, so it looks exactly like right-click does
+     nothing. Added `e.stopPropagation()` alongside `e.preventDefault()`.
+  - Notable process point: my own in-browser testing (synthetic
+    `dispatchEvent` calls) did **not** reproduce either bug reliably, so
+    "verified in-browser" from entry (6) wasn't sufficient — synthetic
+    events and real user gestures aren't guaranteed to hit the same code
+    paths/timing. Worth remembering for future UI work: browser-automation
+    testing here is a good regression check, not a substitute for the
+    actual reported behavior when a user says something still doesn't work.
+- Added the confirmation Ryan asked for on the bulk ID3 edit dialog:
+  clicking "Apply Changes" now shows `window.confirm("Are you sure? You are
+  editing N tracks. Changes cannot be undone.")` before actually calling
+  `PUT /api/tracks/bulk-tags` — matches the existing `window.confirm`
+  pattern already used for the mobile download long-press, rather than
+  building a custom nested dialog. Single-track edits don't have this
+  (only one track, lower stakes, and "Apply Changes" already requires an
+  explicit second click after enabling itself).
+
+## 2026-08-18 — Ryan (6)
+
+- Added the first right-click context menu (desktop only — right-click
+  doesn't fire the same way on touch, and mobile already uses long-press
+  for the download prompt). `TrackContextMenu` is built generically (an
+  items list + position), so future right-click actions should extend that
+  same list rather than a new one-off menu.
+- Added client-side ID3 tag editing: "Edit ID3 Tag" opens `EditTagsDialog`
+  pre-filled with Title/Artist/Album/Genre/Track #/Year, "Apply Changes"
+  disabled until something actually changes (and while Title, the one
+  required field, is empty). Chose to always send every field's current
+  value on apply (not a diff) — simpler, and avoids ambiguity between
+  "field wasn't touched" and "field was intentionally cleared."
+  `PUT /api/tracks/{id}/tags` writes straight into the file's real ID3v2
+  tag via TagLibSharp, then mirrors into the DB in the same request — same
+  pattern as the existing rating endpoint.
+  - Verified end-to-end: edited a track's genre in the browser, confirmed
+    the API/DB reflected it, then triggered a full library rescan (which
+    reads straight from the file) and confirmed the new genre survived —
+    proving it's actually in the file, not just the DB. Reverted the test
+    edit back afterward.
+  - Added `downloadUrl`-style backend route naming consistency; also added
+    `PlayerContext.setCurrentTrackFields` (a general version of the
+    existing `setCurrentTrackRating`) so editing the *currently playing*
+    track's tags updates the Mini Player / Now Playing Screen immediately.
+- Mid-session, Ryan asked for multi-select (drag across rows, desktop only)
+  plus a bulk-edit variant of the same right-click flow. Built and verified:
+  - `TrackList` now supports drag-to-select: mousedown + drag over other
+    rows selects a contiguous range; a plain click (no drag) still just
+    plays the track, unchanged from before. Right-clicking inside the
+    current selection edits the whole selection; right-clicking outside it
+    resets selection to just the clicked row first (standard file-explorer
+    convention).
+  - Right-clicking a multi-selection shows "Edit ID3 Tags" (plural) and
+    opens `EditTagsBulkDialog` instead of the single-track dialog — showing
+    **only** Artist/Album/Genre/Year, never Title/Track #/rating, since
+    those are inherently per-track and multiple tracks can't sensibly
+    "share" them.
+  - This dialog can't reuse the single-track dialog's "always send every
+    field" approach — with multiple tracks that can genuinely disagree on a
+    field's value, blindly applying all fields would silently overwrite
+    values that were never actually touched. So it tracks each field's
+    "touched" state independently: a field where the selection disagrees
+    shows blank with a "multiple values" placeholder, and is only written
+    (via a `Set*` boolean flag per field in the new
+    `PUT /api/tracks/bulk-tags` request) if the user actually edits it.
+  - Verified end-to-end: drag-selected 2 tracks from different albums
+    (different Album/Year, same Artist/Genre), confirmed the dialog showed
+    "multiple values" placeholders exactly on Album/Year, changed only
+    Genre, applied, and confirmed via the API (then a full rescan, proving
+    it hit the actual files) that Genre changed on both while Album/Year
+    stayed exactly as they were — untouched, not blanked. Reverted the test
+    edits back afterward.
+  - Hit a real testing gotcha along the way: React 19's `onMouseEnter`
+    wouldn't fire from synthetic `dispatchEvent`-based automation no matter
+    how the event was constructed; switched to `onMouseOver` (a real
+    bubbling native event) for the drag-select row handler, which behaves
+    identically for this use case and is more predictable to drive
+    programmatically. Documented in `CLAUDE.md` in case a future session
+    needs to script-test a drag interaction here again.
+
 ## 2026-08-18 — Ryan (5)
 
 - Added real track pre-buffering, replacing reliance on the browser's

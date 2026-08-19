@@ -1,4 +1,4 @@
-import type { Album, Facet, PagedResult, PlaylistDetail, PlaylistSummary, Track } from './types';
+import type { Album, Facet, PagedResult, PlayHistoryEntry, PlaylistDetail, PlaylistSummary, Track } from './types';
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -101,6 +101,51 @@ export function setTrackRating(trackId: number, rating: number): Promise<void> {
   return sendJson(`/api/tracks/${trackId}/rating`, 'PUT', { rating });
 }
 
+export interface UpdateTagsRequest {
+  title: string;
+  artist: string | null;
+  album: string | null;
+  genre: string | null;
+  trackNumber: number | null;
+  year: number | null;
+}
+
+export async function updateTrackTags(trackId: number, request: UpdateTagsRequest): Promise<Track> {
+  const res = await fetch(`/api/tracks/${trackId}/tags`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export interface BulkUpdateTagsRequest {
+  trackIds: number[];
+  setArtist: boolean;
+  artist: string | null;
+  setAlbum: boolean;
+  album: string | null;
+  setGenre: boolean;
+  genre: string | null;
+  setYear: boolean;
+  year: number | null;
+}
+
+export async function updateTracksBulkTags(request: BulkUpdateTagsRequest): Promise<Track[]> {
+  const res = await fetch('/api/tracks/bulk-tags', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export function streamUrl(trackId: number): string {
   return `/api/tracks/${trackId}/stream`;
 }
@@ -111,4 +156,36 @@ export function downloadUrl(trackId: number): string {
 
 export function artworkUrl(trackId: number): string {
   return `/api/tracks/${trackId}/artwork`;
+}
+
+export function recordPlay(trackId: number): Promise<void> {
+  return fetch(`/api/tracks/${trackId}/play`, { method: 'POST' }).then((res) => {
+    if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+  });
+}
+
+export async function getHistoryEnabled(): Promise<boolean> {
+  const data = await getJson<{ enabled: boolean }>('/api/settings/history-enabled');
+  return data.enabled;
+}
+
+export function setHistoryEnabled(enabled: boolean): Promise<void> {
+  return sendJson('/api/settings/history-enabled', 'PUT', { enabled });
+}
+
+export function fetchHistory(): Promise<PlayHistoryEntry[]> {
+  return getJson('/api/history');
+}
+
+export function clearHistory(): Promise<void> {
+  return sendJson('/api/history', 'DELETE');
+}
+
+export async function getRemoveMissingTracks(): Promise<boolean> {
+  const data = await getJson<{ enabled: boolean }>('/api/settings/remove-missing-tracks');
+  return data.enabled;
+}
+
+export function setRemoveMissingTracks(enabled: boolean): Promise<void> {
+  return sendJson('/api/settings/remove-missing-tracks', 'PUT', { enabled });
 }

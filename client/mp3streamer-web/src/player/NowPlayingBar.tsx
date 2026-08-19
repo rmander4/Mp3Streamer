@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePlayer } from './PlayerContext';
-import { artworkUrl, setTrackRating, streamUrl } from '../api/client';
+import { artworkUrl, recordPlay, setTrackRating, streamUrl } from '../api/client';
 import { formatDuration } from '../utils/format';
 import { FullScreenPlayer } from './FullScreenPlayer';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from './icons';
@@ -17,7 +17,7 @@ const MOBILE_QUERY = '(pointer: coarse), (max-width: 700px)';
 const HANDOFF_LEAD_SECONDS = 5;
 
 export function NowPlayingBar() {
-  const { currentTrack, isPlaying, setIsPlaying, setCurrentTrackRating, next, previous } = usePlayer();
+  const { currentTrack, isPlaying, setIsPlaying, setCurrentTrackRating, selectionSeq, next, previous } = usePlayer();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -36,6 +36,11 @@ export function NowPlayingBar() {
   // connection drop mid-song doesn't interrupt it. The <audio> element's
   // own play/pause events remain the source of truth for isPlaying; we
   // drive playback imperatively here rather than reacting to isPlaying.
+  // Keyed on selectionSeq (bumped on every explicit play action), not
+  // currentTrack?.id — id alone doesn't change when re-selecting the same
+  // track, which used to silently no-op the re-selection entirely (found
+  // via a real bug: repeatedly clicking the same track from History wasn't
+  // recording new history entries, since this effect never re-ran).
   useEffect(() => {
     setCurrentTime(0);
     isPartialRef.current = false;
@@ -58,6 +63,15 @@ export function NowPlayingBar() {
     // metadata, which would otherwise briefly reflect only the buffered
     // portion's (shorter) duration for a partially-buffered long track.
     setDuration(currentTrack.durationSeconds);
+
+    // Records one history entry per track selection (not per pause/resume —
+    // those don't re-trigger this effect, since it only depends on
+    // currentTrack.id). The server decides whether to actually persist it
+    // based on the Track History on/off setting; the client doesn't need to
+    // know that state just to fire this.
+    recordPlay(currentTrack.id).catch((err) => {
+      console.error('Failed to record play history', err);
+    });
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -87,7 +101,7 @@ export function NowPlayingBar() {
       .finally(() => setIsBuffering(false));
 
     return () => controller.abort();
-  }, [currentTrack?.id]);
+  }, [selectionSeq]);
 
   // Final safety net for a genuine component unmount (not just a track
   // change, which the effect above already cleans up after itself).

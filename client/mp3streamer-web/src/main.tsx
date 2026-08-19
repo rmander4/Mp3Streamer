@@ -4,13 +4,16 @@ import './index.css'
 import App from './App.tsx'
 import { PlayerProvider } from './player/PlayerContext.tsx'
 import { ThemeProvider } from './theme/ThemeContext.tsx'
+import { HistoryProvider } from './history/HistoryContext.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
-      <PlayerProvider>
-        <App />
-      </PlayerProvider>
+      <HistoryProvider>
+        <PlayerProvider>
+          <App />
+        </PlayerProvider>
+      </HistoryProvider>
     </ThemeProvider>
   </StrictMode>,
 )

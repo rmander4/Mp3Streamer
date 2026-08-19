@@ -133,6 +133,94 @@
   font-weight: 600;
 }
 
+.context-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 180px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-h);
+  cursor: pointer;
+  font: inherit;
+}
+
+.context-menu-item:hover {
+  background: var(--accent-bg);
+}
+
+.tags-panel {
+  max-width: 420px;
+}
+
+.tags-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tags-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tags-field input {
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.tags-field input::placeholder {
+  font-style: italic;
+}
+
+.tags-bulk-hint {
+  font-size: 13px;
+  color: var(--text);
+  margin: 0 0 16px;
+}
+
+.tags-error {
+  color: #d33;
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.tags-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.tags-actions .settings-option {
+  flex: none;
+}
+
+.tags-apply:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .sidebar ul {
   list-style: none;
   margin: 0;
@@ -177,6 +265,16 @@
   align-items: center;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.history-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.history-header .settings-option {
+  flex: none;
 }
 
 .back-link {
@@ -235,6 +333,27 @@
 .track-row.active {
   background: var(--accent-bg);
   font-weight: 600;
+}
+
+.track-row.selected {
+  background: var(--accent-bg);
+  outline: 1px solid var(--accent-border);
+  outline-offset: -1px;
+}
+
+.track-row.missing {
+  opacity: 0.45;
+}
+
+.track-row.missing:hover {
+  background: none;
+  cursor: default;
+}
+
+.missing-label {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text);
 }
 
 .facet-list {

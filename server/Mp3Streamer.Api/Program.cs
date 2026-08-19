@@ -46,5 +46,6 @@ app.MapPost("/api/library/scan", async (LibraryScanner scanner, CancellationToke
 
 app.MapLibraryEndpoints();
 app.MapPlaylistEndpoints();
+app.MapHistoryEndpoints();
 
 app.Run();

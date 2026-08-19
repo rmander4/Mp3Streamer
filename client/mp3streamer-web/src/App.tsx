@@ -5,6 +5,7 @@ import { TrackList } from './components/TrackList';
 import { AlbumGrid } from './components/AlbumGrid';
 import { FacetList } from './components/FacetList';
 import { PlaylistPanel } from './components/PlaylistPanel';
+import { HistoryPanel } from './components/HistoryPanel';
 import {
   addTrackToPlaylist,
   fetchAlbums,
@@ -76,7 +77,7 @@ function App() {
       .finally(() => setLoading(false));
   }, [view, drillDown, search]);
 
-  const { playQueue, currentTrack, setCurrentTrackRating } = usePlayer();
+  const { playQueue, currentTrack, setCurrentTrackRating, setCurrentTrackFields } = usePlayer();
 
   const handlePlay = useCallback(
     (queue: Track[], index: number) => {
@@ -96,6 +97,27 @@ function App() {
       });
     },
     [currentTrack, setCurrentTrackRating],
+  );
+
+  const handleTagsUpdated = useCallback(
+    (updated: Track) => {
+      setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      if (currentTrack?.id === updated.id) {
+        setCurrentTrackFields(updated);
+      }
+    },
+    [currentTrack, setCurrentTrackFields],
+  );
+
+  const handleBulkTagsUpdated = useCallback(
+    (updated: Track[]) => {
+      const byId = new Map(updated.map((t) => [t.id, t]));
+      setTracks((prev) => prev.map((t) => byId.get(t.id) ?? t));
+      if (currentTrack && byId.has(currentTrack.id)) {
+        setCurrentTrackFields(byId.get(currentTrack.id)!);
+      }
+    },
+    [currentTrack, setCurrentTrackFields],
   );
 
   const handleAddToPlaylist = useCallback((trackId: number, playlistId: number) => {
@@ -120,6 +142,9 @@ function App() {
     if (view === 'playlists') {
       return <PlaylistPanel />;
     }
+    if (view === 'history') {
+      return <HistoryPanel />;
+    }
 
     return (
       <>
@@ -128,6 +153,8 @@ function App() {
           tracks={tracks}
           onPlay={handlePlay}
           onRate={handleRate}
+          onTagsUpdated={handleTagsUpdated}
+          onBulkTagsUpdated={handleBulkTagsUpdated}
           activeTrackId={currentTrack?.id}
           renderRowActions={
             playlists.length > 0

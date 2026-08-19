@@ -49,7 +49,7 @@ public static class LibraryEndpoints
                 .ThenBy(t => t.TrackNumber)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(t => new TrackDto(t.Id, t.Title ?? "Untitled", t.Artist, t.Album, t.Genre, t.TrackNumber, t.Year, t.DurationSeconds, t.HasEmbeddedArt, t.Rating))
+                .Select(t => new TrackDto(t.Id, t.Title ?? "Untitled", t.Artist, t.Album, t.Genre, t.TrackNumber, t.Year, t.DurationSeconds, t.HasEmbeddedArt, t.Rating, t.IsMissing))
                 .ToListAsync();
 
             return Results.Ok(new PagedResult<TrackDto>(items, page, pageSize, totalCount));
@@ -133,6 +133,84 @@ public static class LibraryEndpoints
             return Results.NoContent();
         });
 
+        app.MapPut("/api/tracks/{id:int}/tags", async (int id, UpdateTagsRequest request, LibraryDbContext db) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Title))
+                return Results.BadRequest("Title is required.");
+
+            var track = await db.Tracks.FindAsync(id);
+            if (track is null || !File.Exists(track.FilePath))
+                return Results.NotFound();
+
+            using (var tagFile = TagLib.File.Create(track.FilePath))
+            {
+                var tag = tagFile.Tag;
+                tag.Title = request.Title;
+                tag.Performers = string.IsNullOrWhiteSpace(request.Artist) ? [] : [request.Artist];
+                tag.Album = request.Album;
+                tag.Genres = string.IsNullOrWhiteSpace(request.Genre) ? [] : [request.Genre];
+                tag.Track = (uint)(request.TrackNumber ?? 0);
+                tag.Year = (uint)(request.Year ?? 0);
+                tagFile.Save();
+            }
+
+            track.Title = request.Title;
+            track.Artist = request.Artist;
+            track.Album = request.Album;
+            track.Genre = request.Genre;
+            track.TrackNumber = request.TrackNumber;
+            track.Year = request.Year;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new TrackDto(
+                track.Id, track.Title, track.Artist, track.Album, track.Genre,
+                track.TrackNumber, track.Year, track.DurationSeconds, track.HasEmbeddedArt, track.Rating, track.IsMissing));
+        });
+
+        app.MapPut("/api/tracks/bulk-tags", async (BulkUpdateTagsRequest request, LibraryDbContext db) =>
+        {
+            if (request.TrackIds.Length == 0)
+                return Results.BadRequest("No tracks specified.");
+            if (!request.SetArtist && !request.SetAlbum && !request.SetGenre && !request.SetYear)
+                return Results.BadRequest("No fields to update.");
+
+            var tracks = await db.Tracks.Where(t => request.TrackIds.Contains(t.Id)).ToListAsync();
+            var updated = new List<TrackDto>();
+
+            foreach (var track in tracks)
+            {
+                if (!File.Exists(track.FilePath))
+                    continue;
+
+                using (var tagFile = TagLib.File.Create(track.FilePath))
+                {
+                    var tag = tagFile.Tag;
+                    if (request.SetArtist)
+                        tag.Performers = string.IsNullOrWhiteSpace(request.Artist) ? [] : [request.Artist];
+                    if (request.SetAlbum)
+                        tag.Album = request.Album;
+                    if (request.SetGenre)
+                        tag.Genres = string.IsNullOrWhiteSpace(request.Genre) ? [] : [request.Genre];
+                    if (request.SetYear)
+                        tag.Year = (uint)(request.Year ?? 0);
+                    tagFile.Save();
+                }
+
+                if (request.SetArtist) track.Artist = request.Artist;
+                if (request.SetAlbum) track.Album = request.Album;
+                if (request.SetGenre) track.Genre = request.Genre;
+                if (request.SetYear) track.Year = request.Year;
+
+                updated.Add(new TrackDto(
+                    track.Id, track.Title ?? "Untitled", track.Artist, track.Album, track.Genre,
+                    track.TrackNumber, track.Year, track.DurationSeconds, track.HasEmbeddedArt, track.Rating, track.IsMissing));
+            }
+
+            await db.SaveChangesAsync();
+
+            return Results.Ok(updated);
+        });
+
         app.MapGet("/api/tracks/{id:int}/artwork", async (int id, LibraryDbContext db) =>
         {
             var track = await db.Tracks.FindAsync(id);
@@ -145,6 +223,25 @@ public static class LibraryEndpoints
                 return Results.NotFound();
 
             return Results.File(picture.Data.Data, string.IsNullOrWhiteSpace(picture.MimeType) ? "image/jpeg" : picture.MimeType);
+        });
+
+        app.MapGet("/api/settings/remove-missing-tracks", async (LibraryDbContext db) =>
+        {
+            var setting = await db.Settings.FindAsync("RemoveMissingTracks");
+            var enabled = setting is null || bool.Parse(setting.Value);
+            return Results.Ok(new { enabled });
+        });
+
+        app.MapPut("/api/settings/remove-missing-tracks", async (SetRemoveMissingTracksRequest request, LibraryDbContext db) =>
+        {
+            var setting = await db.Settings.FindAsync("RemoveMissingTracks");
+            if (setting is null)
+                db.Settings.Add(new AppSetting { Key = "RemoveMissingTracks", Value = request.Enabled.ToString() });
+            else
+                setting.Value = request.Enabled.ToString();
+
+            await db.SaveChangesAsync();
+            return Results.NoContent();
         });
     }
 

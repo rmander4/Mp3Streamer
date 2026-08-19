@@ -17,7 +17,7 @@ export function PlaylistPanel() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<PlaylistDetail | null>(null);
   const [newName, setNewName] = useState('');
-  const { playQueue, currentTrack, setCurrentTrackRating } = usePlayer();
+  const { playQueue, currentTrack, setCurrentTrackRating, setCurrentTrackFields } = usePlayer();
 
   const reloadPlaylists = useCallback(() => {
     fetchPlaylists().then(setPlaylists);
@@ -83,6 +83,23 @@ export function PlaylistPanel() {
     });
   };
 
+  const handleTagsUpdated = (updated: Track) => {
+    if (!detail) return;
+    setDetail({ ...detail, tracks: detail.tracks.map((t) => (t.id === updated.id ? updated : t)) });
+    if (currentTrack?.id === updated.id) {
+      setCurrentTrackFields(updated);
+    }
+  };
+
+  const handleBulkTagsUpdated = (updated: Track[]) => {
+    if (!detail) return;
+    const byId = new Map(updated.map((t) => [t.id, t]));
+    setDetail({ ...detail, tracks: detail.tracks.map((t) => byId.get(t.id) ?? t) });
+    if (currentTrack && byId.has(currentTrack.id)) {
+      setCurrentTrackFields(byId.get(currentTrack.id)!);
+    }
+  };
+
   return (
     <div className="playlist-panel">
       <div className="playlist-sidebar">
@@ -121,6 +138,8 @@ export function PlaylistPanel() {
               tracks={detail.tracks}
               onPlay={handlePlay}
               onRate={handleRate}
+              onTagsUpdated={handleTagsUpdated}
+              onBulkTagsUpdated={handleBulkTagsUpdated}
               activeTrackId={currentTrack?.id}
               renderRowActions={(track, index) => (
                 <>

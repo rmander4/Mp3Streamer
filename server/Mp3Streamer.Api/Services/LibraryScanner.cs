@@ -76,6 +76,7 @@ public class LibraryScanner(LibraryDbContext db, IConfiguration config, ILogger<
                     existing.FileSizeBytes = fileInfo.Length;
                     existing.HasEmbeddedArt = tag.Pictures.Length > 0;
                     existing.Rating = rating;
+                    existing.IsMissing = false; // covers a file reappearing at the same path after having gone missing
                     updated++;
                 }
             }
@@ -84,11 +85,34 @@ public class LibraryScanner(LibraryDbContext db, IConfiguration config, ILogger<
         var missing = existingByPath.Values
             .Where(t => !filesOnDisk.Contains(t.FilePath))
             .ToList();
-        db.Tracks.RemoveRange(missing);
+
+        if (await ShouldRemoveMissingTracksAsync())
+        {
+            db.Tracks.RemoveRange(missing);
+        }
+        else
+        {
+            // Keep the row (and its playlist memberships / play history)
+            // instead of deleting it — the frontend grays these out rather
+            // than hiding them, per Ryan (2026-08-18): "maybe I don't want
+            // those tracks to be removed... hence the setting."
+            foreach (var track in missing)
+            {
+                track.IsMissing = true;
+            }
+        }
 
         await db.SaveChangesAsync(ct);
 
         return new ScanResult(added, updated, missing.Count, filesOnDisk.Count);
+    }
+
+    private async Task<bool> ShouldRemoveMissingTracksAsync()
+    {
+        var setting = await db.Settings.FindAsync("RemoveMissingTracks");
+        // No row yet means it's never been toggled — default to the
+        // original always-remove behavior, so this is opt-in to change.
+        return setting is null || bool.Parse(setting.Value);
     }
 
     private static int ReadRating(TagLib.File tagFile)

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mp3Streamer.Api.Data;
 
@@ -10,9 +11,11 @@ using Mp3Streamer.Api.Data;
 namespace Mp3Streamer.Api.Migrations
 {
     [DbContext(typeof(LibraryDbContext))]
-    partial class LibraryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260818225041_AddPlayHistoryAndSettings")]
+    partial class AddPlayHistoryAndSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -123,9 +126,6 @@ namespace Mp3Streamer.Api.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("HasEmbeddedArt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsMissing")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("Rating")

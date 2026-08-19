@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { SettingsPanel } from './SettingsPanel';
+import { useHistorySetting } from '../history/HistoryContext';
 
-export type ViewKey = 'all' | 'artists' | 'albums' | 'genres' | 'playlists';
+export type ViewKey = 'all' | 'artists' | 'albums' | 'genres' | 'playlists' | 'history';
 
 const VIEWS: { key: ViewKey; label: string }[] = [
   { key: 'all', label: 'All Tracks' },
@@ -9,6 +10,7 @@ const VIEWS: { key: ViewKey; label: string }[] = [
   { key: 'albums', label: 'Albums' },
   { key: 'genres', label: 'Genres' },
   { key: 'playlists', label: 'Playlists' },
+  { key: 'history', label: 'History' },
 ];
 
 interface SidebarProps {
@@ -18,6 +20,10 @@ interface SidebarProps {
 
 export function Sidebar({ active, onSelect }: SidebarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { historyEnabled } = useHistorySetting();
+  // Hide History until we've actually confirmed it's on — avoids the item
+  // briefly appearing then disappearing on load if it turns out disabled.
+  const visibleViews = VIEWS.filter((v) => v.key !== 'history' || historyEnabled === true);
 
   return (
     <nav className="sidebar">
@@ -28,7 +34,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
         </button>
       </div>
       <ul>
-        {VIEWS.map((v) => (
+        {visibleViews.map((v) => (
           <li key={v.key}>
             <button
               className={v.key === active ? 'nav-item active' : 'nav-item'}

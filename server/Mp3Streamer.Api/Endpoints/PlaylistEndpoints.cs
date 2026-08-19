@@ -63,7 +63,7 @@ public static class PlaylistEndpoints
             var tracks = playlist.PlaylistTracks
                 .OrderBy(pt => pt.SortOrder)
                 .Select(pt => pt.Track)
-                .Select(t => new TrackDto(t.Id, t.Title ?? "Untitled", t.Artist, t.Album, t.Genre, t.TrackNumber, t.Year, t.DurationSeconds, t.HasEmbeddedArt, t.Rating))
+                .Select(t => new TrackDto(t.Id, t.Title ?? "Untitled", t.Artist, t.Album, t.Genre, t.TrackNumber, t.Year, t.DurationSeconds, t.HasEmbeddedArt, t.Rating, t.IsMissing))
                 .ToList();
 
             return Results.Ok(new PlaylistDetailDto(playlist.Id, playlist.Name, tracks));

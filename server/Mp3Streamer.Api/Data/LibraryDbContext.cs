@@ -8,12 +8,26 @@ public class LibraryDbContext(DbContextOptions<LibraryDbContext> options) : DbCo
     public DbSet<Track> Tracks => Set<Track>();
     public DbSet<Playlist> Playlists => Set<Playlist>();
     public DbSet<PlaylistTrack> PlaylistTracks => Set<PlaylistTrack>();
+    public DbSet<PlayHistoryEntry> PlayHistory => Set<PlayHistoryEntry>();
+    public DbSet<AppSetting> Settings => Set<AppSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Track>()
             .HasIndex(t => t.FilePath)
             .IsUnique();
+
+        modelBuilder.Entity<AppSetting>()
+            .HasKey(s => s.Key);
+
+        modelBuilder.Entity<PlayHistoryEntry>()
+            .HasOne(h => h.Track)
+            .WithMany()
+            .HasForeignKey(h => h.TrackId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlayHistoryEntry>()
+            .HasIndex(h => h.PlayedAtUtc);
 
         modelBuilder.Entity<PlaylistTrack>()
             .HasOne(pt => pt.Playlist)

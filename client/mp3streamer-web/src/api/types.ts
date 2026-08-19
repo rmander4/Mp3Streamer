@@ -9,6 +9,7 @@ export interface Track {
   durationSeconds: number;
   hasEmbeddedArt: boolean;
   rating: number;
+  isMissing: boolean;
 }
 
 export interface PagedResult<T> {
@@ -40,4 +41,10 @@ export interface PlaylistDetail {
   id: number;
   name: string;
   tracks: Track[];
+}
+
+export interface PlayHistoryEntry {
+  id: number;
+  track: Track;
+  playedAtUtc: string;
 }

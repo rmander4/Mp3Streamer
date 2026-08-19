@@ -15,6 +15,11 @@ public class Track
     public DateTime DateAdded { get; set; }
     public bool HasEmbeddedArt { get; set; }
     public int Rating { get; set; }
+    // Set by the scanner when the file can't be found on disk anymore, but
+    // only if the "remove missing tracks" setting is off — otherwise the
+    // row is just deleted outright and this never gets used. Cleared back
+    // to false if the file reappears at the same path on a later scan.
+    public bool IsMissing { get; set; }
 
     public ICollection<PlaylistTrack> PlaylistTracks { get; set; } = new List<PlaylistTrack>();
 }
