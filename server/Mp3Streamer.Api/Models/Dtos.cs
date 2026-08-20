@@ -17,6 +17,12 @@ public record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int
 
 public record FacetDto(string Name, int TrackCount);
 
+// AlbumArtTrackIds: up to 4 sample track ids, one per distinct album by this
+// artist — the frontend uses these to render a small cascaded stack of
+// album art thumbnails next to the artist name. Empty for genres (they use
+// plain FacetDto).
+public record ArtistDto(string Name, int TrackCount, int[] AlbumArtTrackIds);
+
 public record AlbumDto(string Album, string? Artist, int TrackCount, int SampleTrackId);
 
 public record PlaylistSummaryDto(int Id, string Name, int TrackCount);

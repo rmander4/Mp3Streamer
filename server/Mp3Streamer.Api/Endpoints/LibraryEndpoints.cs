@@ -57,14 +57,31 @@ public static class LibraryEndpoints
 
         app.MapGet("/api/artists", async (LibraryDbContext db) =>
         {
-            var artists = await db.Tracks
+            var trackCounts = await db.Tracks
                 .Where(t => t.Artist != null)
                 .GroupBy(t => t.Artist)
                 .Select(g => new { Name = g.Key!, Count = g.Count() })
                 .ToListAsync();
-            return Results.Ok(artists
-                .Select(a => new FacetDto(a.Name, a.Count))
-                .OrderBy(f => f.Name));
+
+            // One representative track id per (Artist, Album) pair, for the
+            // frontend's small cascaded album-art stack next to each artist.
+            var albumSamples = await db.Tracks
+                .Where(t => t.Artist != null && t.Album != null)
+                .GroupBy(t => new { t.Artist, t.Album })
+                .Select(g => new { Artist = g.Key.Artist!, Album = g.Key.Album!, SampleTrackId = g.Min(t => t.Id) })
+                .ToListAsync();
+
+            var albumArtByArtist = albumSamples
+                .GroupBy(a => a.Artist)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(a => a.Album).Take(4).Select(a => a.SampleTrackId).ToArray());
+
+            var artists = trackCounts
+                .Select(a => new ArtistDto(a.Name, a.Count, albumArtByArtist.GetValueOrDefault(a.Name, [])))
+                .OrderBy(a => a.Name);
+
+            return Results.Ok(artists);
         });
 
         app.MapGet("/api/genres", async (LibraryDbContext db) =>

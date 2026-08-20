@@ -14,6 +14,40 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-20 — Ryan
+
+- Added a small album-art "stack" to the desktop Artists view: each artist
+  row now shows up to 4 small cascaded album-art thumbnails (one per
+  distinct album, no y-axis overlap — left-to-right only), right-justified
+  next to the track count. `GET /api/artists` now returns
+  `albumArtTrackIds` per artist (`ArtistDto`, `LibraryEndpoints.cs`); the
+  frontend renders them via a new `AlbumArtStack` component in
+  `FacetList.tsx`. Iterated through several rounds of visual feedback with
+  Ryan (spacing, right-justification, single-digit count alignment) before
+  landing on the final layout. Desktop-only — hidden under the existing
+  `max-width: 700px` layout breakpoint, same as other desktop-only columns.
+- Added a fallback icon for the rare case where an album has no embedded
+  art: previously a failed artwork load just went invisible (`visibility:
+  hidden`), leaving a blank gap in the stack. Now it renders a small
+  music-note glyph in a placeholder box matching the real thumbnails'
+  size/border, tracked via per-stack React state (`AlbumArtStack`'s
+  `failed` set) rather than mutating the DOM node directly.
+- Also answered a question (no code change): landscape-mode mobile looks
+  like desktop because the CSS layout breakpoint
+  (`@media (max-width: 700px)`) is width-only, unlike the JS
+  `MOBILE_QUERY` constant used for touch-interaction logic (`(pointer:
+  coarse), (max-width: 700px)`) — a landscape phone is usually wider than
+  700px and falls on the desktop side of that breakpoint. Real gap, not
+  fixed yet — flagged for a future session if it's worth addressing.
+- Verified both changes on a separate test instance (port 5289) before
+  deploying. Along the way, discovered the checked-in (but gitignored)
+  `server/Mp3Streamer.Api/wwwroot/` build output had gone stale from an
+  earlier session and was masking the fresh frontend build during local
+  testing — re-copied `dist/` into it before publishing. Deployed to the
+  live Windows Service via `Restart-Service`.
+
+---
+
 ## 2026-08-19 — Ryan (2)
 
 - Ryan was actively reorganizing his real music library (adding new

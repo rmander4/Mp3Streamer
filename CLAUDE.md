@@ -151,7 +151,13 @@ Worth knowing before you re-discover these the hard way:
   a partially-buffered track is actually playable.
 - **Mobile detection uses `(pointer: coarse), (max-width: 700px)`**, not
   just `max-width` — a phone held in landscape is often wider than 700px,
-  so width alone misses it.
+  so width alone misses it. **This is only true of the JS `MOBILE_QUERY`
+  constant** (interaction logic — long-press vs. right-click, tap-to-open
+  Now Playing Screen). `App.css`'s layout breakpoint (the one that hides
+  desktop-only columns/sidebar) is still plain `@media (max-width: 700px)`
+  — known, not yet fixed (flagged to Ryan 2026-08-20). Net effect: a phone
+  in landscape gets the desktop *layout* but still behaves like a touch
+  device for those specific interactions.
 - **`TrackList`'s drag-to-select uses `onMouseOver`, not `onMouseEnter`.**
   React's `onMouseEnter`/`onMouseLeave` are synthesized internally rather
   than mapped straight from a native event, and in testing this via
@@ -340,6 +346,19 @@ Worth knowing before you re-discover these the hard way:
   dropped events). Verified on a separate port against the real library
   before redeploying to the live service, per Ryan's standing "test
   before you deploy" preference.
+- ✅ Album-art stack (desktop Artists view) — each artist row shows up to 4
+  small (22x22px) album-art thumbnails, one per distinct album, cascaded
+  left-to-right only (no y-axis overlap), right-justified next to the
+  track count. `GET /api/artists` returns `AlbumArtTrackIds` per artist
+  (`ArtistDto`); rendered by `AlbumArtStack` inside `FacetList.tsx`.
+  Desktop-only, hidden under the same `max-width: 700px` layout breakpoint
+  as other desktop-only columns. Iterated through several rounds of
+  visual feedback with Ryan before landing on the final look.
+  When a track has no embedded art, the thumbnail falls back to a small
+  music-note glyph in a placeholder box (same size/border as a real
+  thumbnail) rather than an invisible gap — tracked via per-stack React
+  state, not DOM mutation, since directly hiding the failed `<img>` node
+  broke re-render on Fast Refresh/remount.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 
