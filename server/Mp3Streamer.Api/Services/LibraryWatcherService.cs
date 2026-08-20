@@ -116,7 +116,11 @@ public class LibraryWatcherService(
         {
             IncludeSubdirectories = true,
             Filter = "*.mp3",
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            // Default (8KB) can overflow — and silently drop events — during
+            // a large bulk change (e.g. adding several new artists' worth of
+            // albums at once). 64KB is the practical max Windows honors.
+            InternalBufferSize = 64 * 1024
         };
         watcher.Created += OnLibraryChanged;
         watcher.Deleted += OnLibraryChanged;

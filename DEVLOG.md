@@ -14,6 +14,39 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-19 — Ryan (2)
+
+- Ryan was actively reorganizing his real music library (adding new
+  artists — Children of Bodom, Kalisia — and renaming Iced Earth's album
+  folders) while the site was live, and noticed the changes weren't
+  appearing even after a browser refresh. Diagnosed two separate things:
+  1. A plain page reload alone was never going to show new backend data
+     if the *server* hadn't scanned yet — expected, not a bug.
+  2. But the automatic watcher genuinely hadn't picked up most of the
+     changes either: a manual `POST /api/library/scan` immediately found
+     50 tracks (two whole new artists) the watcher had missed. Root cause
+     is almost certainly `FileSystemWatcher`'s internal OS buffer
+     overflowing during Ryan's bulk add (many files across new folders in
+     a short window) — a known failure mode where excess events are
+     silently dropped rather than queued.
+  - Fixed by raising `FileSystemWatcher.InternalBufferSize` from the
+    8KB default to 64KB (the practical max) in `LibraryWatcherService`,
+    to make this less likely going forward.
+  - Added the **Refresh Library** button Ryan asked for (Settings →
+    Library) as a user-facing fallback regardless — calls the existing
+    `POST /api/library/scan` endpoint, then reloads the page so whatever
+    view is open shows fresh results immediately, no manual reload
+    needed on top of the click.
+  - Verified the whole flow on a separate port (5289) against the real
+    library before touching the live deployment, per Ryan's standing
+    request to always test before deploying: confirmed the button
+    triggers a scan and the page reloads with fresh data, no console
+    errors. Only then repeated the real Windows Service redeploy
+    workflow (from `CLAUDE.md`) — had Ryan `Stop-Service`, published,
+    had him `Start-Service`, then confirmed via the API and in-browser
+    that the live site (108 tracks matching his in-progress
+    reorganization) has the new build.
+
 ## 2026-08-19 — Ryan (1)
 
 - Deployed the backend as a permanent Windows Service (`Mp3Streamer`) on

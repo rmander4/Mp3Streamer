@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTheme, type Theme } from '../theme/ThemeContext';
 import { useHistorySetting } from '../history/HistoryContext';
-import { getRemoveMissingTracks, setRemoveMissingTracks } from '../api/client';
+import { getRemoveMissingTracks, scanLibrary, setRemoveMissingTracks } from '../api/client';
 
 const FULLSCREEN_SUPPORTED = typeof document !== 'undefined' && !!document.documentElement.requestFullscreen;
 
@@ -23,6 +23,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   // gates the sidebar's History nav item across two SettingsPanel render
   // sites), so a local fetch here is enough — no shared context needed.
   const [removeMissing, setRemoveMissingState] = useState<boolean | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -42,6 +44,21 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       console.error('Failed to save remove-missing-tracks setting', err);
       setRemoveMissingState(!enabled); // revert on failure
     });
+  };
+
+  const handleRefreshLibrary = async () => {
+    setScanning(true);
+    setScanError(null);
+    try {
+      await scanLibrary();
+      // Simplest way to guarantee whatever view is currently open reflects
+      // the fresh scan, without plumbing a refetch callback through every
+      // view that renders a track list.
+      window.location.reload();
+    } catch {
+      setScanError('Failed to refresh library — please try again.');
+      setScanning(false);
+    }
   };
 
   const toggleFullscreen = () => {
@@ -115,6 +132,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               Off
             </button>
           </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="settings-label">Library</div>
+          <button className="settings-option" onClick={handleRefreshLibrary} disabled={scanning}>
+            {scanning ? 'Refreshing…' : 'Refresh Library'}
+          </button>
+          {scanError ? <p className="tags-error">{scanError}</p> : null}
         </div>
 
         {FULLSCREEN_SUPPORTED ? (

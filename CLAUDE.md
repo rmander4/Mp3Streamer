@@ -188,6 +188,17 @@ Worth knowing before you re-discover these the hard way:
   in `System32`). Fixed by pinning `ContentRootPath = AppContext.BaseDirectory`
   explicitly in `Program.cs`. Full story under "Running as a Windows
   Service" below — don't remove that pin, the service depends on it.
+- **`FileSystemWatcher` can silently drop events during a large bulk
+  change.** Its internal OS buffer defaults to 8KB; a big add (many files
+  across several new folders in a short window — e.g. Ryan adding two new
+  artists' worth of albums at once, 2026-08-19) can overflow it, and the
+  overflowing events are just lost, not queued — no exception in the
+  common case, the watcher just doesn't react. Raised
+  `InternalBufferSize` to 64KB (the practical max) in
+  `LibraryWatcherService` to make this less likely, and added a manual
+  **Refresh Library** button (Settings) as a user-facing fallback for
+  whenever it still happens — don't remove that button on the assumption
+  the watcher is now fully reliable, it isn't guaranteed to be.
 
 ## Done since the original plan
 
@@ -319,6 +330,16 @@ Worth knowing before you re-discover these the hard way:
   open. See "Running as a Windows Service" above for full setup, the
   redeploy workflow, and the `ContentRootPath` gotcha that came with it.
   Deliberately stayed LAN-only (no Tailscale/Cloudflare Tunnel) per Ryan.
+- ✅ Manual **Refresh Library** button (Settings) — calls the existing
+  `POST /api/library/scan` then reloads the page, so whatever view is open
+  shows fresh results immediately. Added as a fallback for the
+  `FileSystemWatcher` buffer-overflow gotcha above, found 2026-08-19 when
+  Ryan added two new artists' worth of albums at once and the watcher
+  missed most of it (a manual scan found all 50 missing tracks instantly,
+  confirming the scanner itself was fine — only the automatic watcher had
+  dropped events). Verified on a separate port against the real library
+  before redeploying to the live service, per Ryan's standing "test
+  before you deploy" preference.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

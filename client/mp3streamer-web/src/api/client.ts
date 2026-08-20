@@ -189,3 +189,22 @@ export async function getRemoveMissingTracks(): Promise<boolean> {
 export function setRemoveMissingTracks(enabled: boolean): Promise<void> {
   return sendJson('/api/settings/remove-missing-tracks', 'PUT', { enabled });
 }
+
+export interface ScanResult {
+  added: number;
+  updated: number;
+  removed: number;
+  totalFilesFound: number;
+}
+
+// Manual on-demand rescan — the watcher normally catches library changes
+// automatically, but its FileSystemWatcher can silently drop events during
+// a large bulk change (its internal OS buffer can overflow), so this is a
+// user-facing fallback rather than something that should be needed often.
+export async function scanLibrary(): Promise<ScanResult> {
+  const res = await fetch('/api/library/scan', { method: 'POST' });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
