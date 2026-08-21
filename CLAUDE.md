@@ -99,7 +99,8 @@ real album, and from a phone over the LAN):
 - `api/client.ts`, `api/types.ts` — typed fetch wrappers for every endpoint
 - `components/` — `Sidebar`, `TrackList` (also owns desktop drag-to-select
   and the right-click menu — see Key decisions below), `AlbumGrid`,
-  `FacetList`, `SearchBar`, `PlaylistPanel`, `SettingsPanel`,
+  `FacetList`, `SearchBar` (includes a mic button for voice search via the
+  Web Speech API — see Key decisions below), `PlaylistPanel`, `SettingsPanel`,
   `TrackContextMenu` (generic right-click menu — first item is "Edit ID3
   Tag(s)", desktop-only), `EditTagsDialog` (single-track ID3 editor),
   `EditTagsBulkDialog` (multi-track variant — only Artist/Album/Genre/Year,
@@ -372,6 +373,29 @@ Worth knowing before you re-discover these the hard way:
   thumbnail) rather than an invisible gap — tracked via per-stack React
   state, not DOM mutation, since directly hiding the failed `<img>` node
   broke re-render on Fast Refresh/remount.
+- ✅ Voice search — a mic button next to `SearchBar`'s text input, using the
+  browser's built-in Web Speech API (`SpeechRecognition` /
+  `webkitSpeechRecognition`), not a custom server-side transcription
+  endpoint. Feature-detected at module load (`src/components/SearchBar.tsx`);
+  the button simply doesn't render on a browser without it, rather than
+  showing something that's guaranteed to fail. On tap: starts listening
+  (pulsing accent-colored ring), transcribes on `onresult`, and sets the
+  transcript into the same `value` state manual typing uses — so it flows
+  through the existing 300ms-debounced search unchanged, no separate
+  search-triggering path needed. Any failure (`onerror`, or an 8s timeout
+  backstop in case the browser's own recognition session hangs) shows an
+  inline "Speak to text search is not available at this time. Try again
+  later." banner under the search bar for a few seconds, then clears.
+  Deliberately *not* gated on LAN-vs-remote network detection — discussed
+  with Ryan first (2026-08-20) and dropped in favor of this simpler
+  always-on-with-graceful-failure approach, since LAN access almost always
+  has a working internet path for the phone's own STT round-trip anyway.
+  TypeScript doesn't ship built-in types for this non-standardized API —
+  minimal ambient declarations live in `src/types/speech.d.ts` (only the
+  subset actually used, not a full polyfill). Verified the button, feature
+  detection, and error-banner styling in-browser (a sandboxed test browser
+  can't grant real mic access, so full transcription-to-search-box
+  behavior was verified live on Ryan's phone instead).
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

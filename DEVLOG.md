@@ -14,6 +14,35 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-20 — Ryan (3)
+
+- Added voice search: a mic button next to the search box (`SearchBar.tsx`)
+  using the browser's built-in Web Speech API — no custom backend
+  transcription endpoint, the phone/browser does the speech-to-text
+  itself. Tap to start listening, speak, and the transcript populates the
+  search box and runs the search automatically (reuses the existing
+  debounced search state, no separate code path). Talked through a few
+  design options with Ryan first before landing here:
+  - Considered detecting LAN vs. remote network access and only enabling
+    voice search off-LAN (reasoning: hands-free matters more away from
+    home). Technically doable later (compare `window.location.hostname`
+    against the LAN IP once remote access exists), but there's no "remote"
+    case to compare against yet, so shelved for now.
+  - Landed on: always show the mic button, and handle failure gracefully
+    — an 8s timeout backstop plus the Web Speech API's own error events
+    trigger an inline "Speak to text search is not available at this
+    time. Try again later." message. Simpler, and the LAN-detection
+    approach wouldn't have actually caught most real failure modes (mic
+    permission denied, browser unsupported) anyway.
+  - Added minimal ambient TypeScript types for `SpeechRecognition` in
+    `src/types/speech.d.ts`, since it's not part of TS's built-in DOM lib.
+  - Verified the button/feature-detection/error-banner styling on a local
+    test instance (the sandboxed browser tooling can't grant real mic
+    access), then confirmed the full transcribe-and-search flow works
+    live on Ryan's phone after deploying.
+
+---
+
 ## 2026-08-20 — Ryan (2)
 
 - Fixed misaligned track counts on the mobile Artists tab: they were
