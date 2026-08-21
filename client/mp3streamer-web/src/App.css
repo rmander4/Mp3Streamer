@@ -481,6 +481,21 @@
   box-sizing: border-box;
 }
 
+.now-playing-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.now-playing-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
 .now-playing-art {
   width: 56px;
   height: 56px;
@@ -923,6 +938,15 @@
     display: none;
   }
 
+  /* The stack element is hidden above, not removed from the DOM — without
+     this, the higher-specificity ".album-art-stack + .facet-count" rule
+     (a fixed 10px margin, meant to sit the count close to the art) still
+     wins over the plain ".facet-count" rule's "margin-left: auto", so the
+     count drifts based on name length instead of sitting flush right. */
+  .album-art-stack + .facet-count {
+    margin-left: auto;
+  }
+
   .track-subtitle-mobile {
     display: block;
     font-size: 12px;
@@ -936,10 +960,21 @@
     gap: 10px;
   }
 
+  /* Stacked into two rows: identity+controls on top, seek bar spanning the
+     full screen width below — a single row didn't leave the seek bar enough
+     space and it was getting visibly cut off at the right edge. */
   .now-playing-bar {
-    height: 68px;
-    padding: 0 10px;
-    gap: 10px;
+    flex-direction: column;
+    height: auto;
+    padding: 8px 0 6px;
+    gap: 6px;
+  }
+
+  .now-playing-main {
+    width: 100%;
+    justify-content: space-between;
+    padding: 0 12px;
+    box-sizing: border-box;
   }
 
   .now-playing-art {
@@ -949,7 +984,19 @@
 
   .now-playing-info {
     width: auto;
-    max-width: 90px;
+    max-width: none;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .now-playing-controls {
+    gap: 14px;
+  }
+
+  .now-playing-seek {
+    width: 100%;
+    padding: 0 6px;
+    box-sizing: border-box;
   }
 
   .now-playing-seek span {

@@ -214,31 +214,35 @@ export function NowPlayingBar() {
           onStalled={handleStalled}
           onWaiting={handleStalled}
         />
-        <img
-          className="now-playing-art"
-          src={artworkUrl(currentTrack.id)}
-          alt=""
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.visibility = 'hidden';
-          }}
-        />
-        <div className="now-playing-info">
-          <div className="now-playing-title">{currentTrack.title}</div>
-          <div className="now-playing-artist">
-            {currentTrack.artist ?? 'Unknown'}
-            {isBuffering ? ' · Buffering…' : ''}
+        <div className="now-playing-main">
+          <div className="now-playing-identity">
+            <img
+              className="now-playing-art"
+              src={artworkUrl(currentTrack.id)}
+              alt=""
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.visibility = 'hidden';
+              }}
+            />
+            <div className="now-playing-info">
+              <div className="now-playing-title">{currentTrack.title}</div>
+              <div className="now-playing-artist">
+                {currentTrack.artist ?? 'Unknown'}
+                {isBuffering ? ' · Buffering…' : ''}
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="now-playing-controls" onClick={(e) => e.stopPropagation()}>
-          <button onClick={previous} aria-label="Previous">
-            <PreviousIcon size={16} />
-          </button>
-          <button onClick={togglePlayback} aria-label={isPlaying ? 'Pause' : 'Play'}>
-            {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
-          </button>
-          <button onClick={next} aria-label="Next">
-            <NextIcon size={16} />
-          </button>
+          <div className="now-playing-controls" onClick={(e) => e.stopPropagation()}>
+            <button onClick={previous} aria-label="Previous">
+              <PreviousIcon size={16} />
+            </button>
+            <button onClick={togglePlayback} aria-label={isPlaying ? 'Pause' : 'Play'}>
+              {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
+            </button>
+            <button onClick={next} aria-label="Next">
+              <NextIcon size={16} />
+            </button>
+          </div>
         </div>
         <div className="now-playing-seek" onClick={(e) => e.stopPropagation()}>
           <span>{formatDuration(currentTime)}</span>

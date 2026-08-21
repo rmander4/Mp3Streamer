@@ -177,6 +177,19 @@ Worth knowing before you re-discover these the hard way:
   didn't reproduce in synthetic-`dispatchEvent`-based browser-automation
   testing, only with a real user right-click — don't treat that kind of
   testing as proof a click/context-menu interaction is bug-free.
+- **A `display: none` element still matches CSS sibling selectors.**
+  `.album-art-stack + .facet-count` (a fixed 10px margin, for when the art
+  stack is visible on desktop) kept overriding `.facet-count`'s plain
+  `margin-left: auto` on mobile — even though `.album-art-stack` itself is
+  hidden there — because `display: none` removes an element from layout,
+  not from the DOM/CSSOM, so adjacent-sibling (`+`) matching still sees it.
+  Symptom looked like a layout bug in the count column itself (drifting
+  based on artist-name length) with nothing obviously wrong in the rule
+  that was actually misbehaving. Fixed with a mobile-only override
+  restoring `margin-left: auto` on that same selector. Worth checking for
+  elsewhere if a "should be simple" flex/margin rule doesn't seem to apply
+  the way its own declaration says it should — check for a more specific
+  sibling-combinator rule matching a *hidden* neighbor first.
 - **`currentTrack?.id` alone is not a reliable "the user (re)selected a
   track" signal.** It doesn't change when re-selecting the track that's
   already playing, which silently broke both buffering-restart and

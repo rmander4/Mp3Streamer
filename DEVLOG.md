@@ -14,6 +14,35 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-20 — Ryan (2)
+
+- Fixed misaligned track counts on the mobile Artists tab: they were
+  drifting based on artist-name length instead of sitting flush right.
+  Root cause was a CSS specificity trap — `.album-art-stack + .facet-count`
+  (a fixed 10px margin, meant to sit the count close to the art stack on
+  desktop) still matched and overrode the plain `.facet-count`'s
+  `margin-left: auto` on mobile, even though `.album-art-stack` itself is
+  `display: none` there. A hidden element still counts for CSS sibling
+  selectors — display:none removes it from layout, not from the DOM/CSSOM.
+  Fixed with a mobile-only override restoring `margin-left: auto` on that
+  selector (`App.css`).
+- Reworked the Mini Player's mobile-portrait layout: the seek bar was
+  getting visibly cut off at the right edge sharing a single row with the
+  album art, track info, and prev/pause/next buttons. Split it into two
+  rows — art/info/controls on top, seek bar on its own full-width row
+  below, edge-to-edge. Required a small JSX restructure in
+  `NowPlayingBar.tsx` (new `.now-playing-main` / `.now-playing-identity`
+  wrapper divs around art+info+controls) so the seek bar could become an
+  independent flex row via `flex-direction: column` on mobile, without
+  changing the desktop single-row layout. Freed-up space on the top row
+  also let the controls spread out instead of being cramped. Ryan mocked
+  up the target layout with an annotated screenshot before implementation.
+- Both changes verified on a separate test instance (port 5289, including
+  measuring actual pixel positions in-browser) before Ryan stopped/started
+  the live Windows Service to deploy each one.
+
+---
+
 ## 2026-08-20 — Ryan
 
 - Added a small album-art "stack" to the desktop Artists view: each artist
