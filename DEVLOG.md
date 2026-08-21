@@ -14,6 +14,22 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-20 — Ryan (4)
+
+- Fixed a bug in voice search's error banner ("Speak to text search is not
+  available at this time..."): it could reappear right after correctly
+  auto-dismissing. Cause — the 8-second timeout backstop (in case the
+  browser's recognition session hangs) wasn't being cancelled when a real
+  `onerror` fired, only when `onend` fired afterward. If the browser was
+  slow to raise `onend` right after `onerror`, the stale backstop timer
+  would fire later, re-showing the banner. Fixed by cancelling the
+  backstop the moment `onerror` fires, not just on `onend`. Also bumped
+  the banner's own auto-dismiss from 4s to 20s per Ryan's ask, so there's
+  more time to actually read it while driving. Verified live on Ryan's
+  phone.
+
+---
+
 ## 2026-08-20 — Ryan (3)
 
 - Added voice search: a mic button next to the search box (`SearchBar.tsx`)

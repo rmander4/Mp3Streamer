@@ -16,6 +16,9 @@ const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRec
 // stuck in "listening" forever if unguarded.
 const LISTEN_TIMEOUT_MS = 8000;
 
+// How long the "not available" error banner stays up before auto-dismissing.
+const MIC_ERROR_DISMISS_MS = 20000;
+
 export function SearchBar({ onSearch, placeholder }: SearchBarProps) {
   const [value, setValue] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -30,7 +33,7 @@ export function SearchBar({ onSearch, placeholder }: SearchBarProps) {
 
   useEffect(() => {
     if (!micError) return;
-    const handle = setTimeout(() => setMicError(false), 4000);
+    const handle = setTimeout(() => setMicError(false), MIC_ERROR_DISMISS_MS);
     return () => clearTimeout(handle);
   }, [micError]);
 
@@ -43,11 +46,15 @@ export function SearchBar({ onSearch, placeholder }: SearchBarProps) {
     };
   }, []);
 
-  const stopListening = () => {
+  const clearListenTimeout = () => {
     if (timeoutRef.current) {
       window.clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
+  };
+
+  const stopListening = () => {
+    clearListenTimeout();
     recognitionRef.current = null;
     setIsListening(false);
   };
@@ -65,7 +72,14 @@ export function SearchBar({ onSearch, placeholder }: SearchBarProps) {
       setValue(transcript);
     };
 
-    recognition.onerror = () => setMicError(true);
+    recognition.onerror = () => {
+      // An explicit error already tells us the session is done — cancel the
+      // 8s backstop now, rather than leaving it to fire later (if the
+      // browser is slow to also raise `onend`) and re-trigger the error
+      // banner right after it had already correctly dismissed itself.
+      clearListenTimeout();
+      setMicError(true);
+    };
     recognition.onend = () => stopListening();
 
     recognitionRef.current = recognition;
