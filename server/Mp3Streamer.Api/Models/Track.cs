@@ -4,8 +4,11 @@ public class Track
 {
     public int Id { get; set; }
     public required string FilePath { get; set; }
+    public string? PersistentId { get; set; }
+    public string CatalogSource { get; set; } = "LocalScan";
     public string? Title { get; set; }
     public string? Artist { get; set; }
+    public string? AlbumArtist { get; set; }
     public string? Album { get; set; }
     public string? Genre { get; set; }
     public int? TrackNumber { get; set; }

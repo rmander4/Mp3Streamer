@@ -12,7 +12,9 @@ interface FullScreenPlayerProps {
   isBuffering: boolean;
   currentTime: number;
   duration: number;
+  volume: number;
   onSeek: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onVolumeChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onTogglePlay: () => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -32,7 +34,9 @@ export function FullScreenPlayer({
   isBuffering,
   currentTime,
   duration,
+  volume,
   onSeek,
+  onVolumeChange,
   onTogglePlay,
   onNext,
   onPrevious,
@@ -110,7 +114,8 @@ export function FullScreenPlayer({
         />
 
         <div className="fullscreen-details">
-          <div className="fullscreen-seek">
+          <div className="fullscreen-seek-row">
+            <div className="fullscreen-seek">
             <input
               type="range"
               min={0}
@@ -121,6 +126,18 @@ export function FullScreenPlayer({
             <div className="fullscreen-seek-labels">
               <span>{formatDuration(currentTime)}</span>
               <span>-{formatDuration(remaining)}</span>
+            </div>
+            </div>
+            <div className="player-volume" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                onChange={onVolumeChange}
+                aria-label="Volume"
+              />
             </div>
           </div>
 

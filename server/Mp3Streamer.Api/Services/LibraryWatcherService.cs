@@ -29,6 +29,12 @@ public class LibraryWatcherService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (string.Equals(config["CatalogSource"], "ItunesXml", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogInformation("iTunes XML catalog selected; skipping filesystem scan and watcher setup");
+            return;
+        }
+
         await RunScanAsync(stoppingToken);
 
         foreach (var root in GetConfiguredRoots())

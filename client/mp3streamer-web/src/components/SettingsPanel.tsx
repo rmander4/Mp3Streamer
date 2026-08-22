@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTheme, type Theme } from '../theme/ThemeContext';
 import { useHistorySetting } from '../history/HistoryContext';
-import { getRemoveMissingTracks, scanLibrary, setRemoveMissingTracks } from '../api/client';
+import { getRemoveMissingTracks, importItunesXml, scanLibrary, setRemoveMissingTracks } from '../api/client';
 
 const FULLSCREEN_SUPPORTED = typeof document !== 'undefined' && !!document.documentElement.requestFullscreen;
 
@@ -25,6 +25,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [removeMissing, setRemoveMissingState] = useState<boolean | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [itunesFile, setItunesFile] = useState<File | null>(null);
+  const [importingItunes, setImportingItunes] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -66,6 +69,41 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       document.exitFullscreen().catch(() => {});
     } else {
       document.documentElement.requestFullscreen().catch(() => {});
+    }
+  };
+
+  const handleImportItunes = async () => {
+    if (!itunesFile) return;
+    console.info('[Mp3Streamer] Starting iTunes XML import', {
+      fileName: itunesFile.name,
+      sizeBytes: itunesFile.size,
+    });
+    setImportingItunes(true);
+    setImportMessage(null);
+    try {
+      let lastProgressLogAt = 0;
+      const result = await importItunesXml(itunesFile, (loadedBytes, totalBytes) => {
+        const now = Date.now();
+        if (now - lastProgressLogAt < 30_000 && loadedBytes < totalBytes) return;
+        lastProgressLogAt = now;
+        const percent = ((loadedBytes / totalBytes) * 100).toFixed(1);
+        console.info('[Mp3Streamer] iTunes XML upload progress', {
+          percent: `${percent}%`,
+          loadedBytes,
+          totalBytes,
+        });
+        if (loadedBytes === totalBytes) {
+          console.info('[Mp3Streamer] iTunes XML upload complete; waiting for server import');
+        }
+      });
+      console.info('[Mp3Streamer] iTunes XML import completed', result);
+      setImportMessage(`Imported ${result.imported.toLocaleString()} tracks.`);
+      console.info('[Mp3Streamer] Reloading the page to display imported tracks');
+      window.location.reload();
+    } catch (error) {
+      console.error('[Mp3Streamer] iTunes XML import failed', error);
+      setImportMessage('Failed to import iTunes XML.');
+      setImportingItunes(false);
     }
   };
 
@@ -134,12 +172,32 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
         </div>
 
-        <div className="settings-section">
+        <div className="settings-section settings-library">
           <div className="settings-label">Library</div>
           <button className="settings-option" onClick={handleRefreshLibrary} disabled={scanning}>
             {scanning ? 'Refreshing…' : 'Refresh Library'}
           </button>
           {scanError ? <p className="tags-error">{scanError}</p> : null}
+          <div className="settings-label">iTunes Library XML</div>
+          <input
+            type="file"
+            accept=".xml,application/xml,text/xml"
+            onChange={(event) => {
+              const selectedFile = event.target.files?.[0] ?? null;
+              setItunesFile(selectedFile);
+              if (selectedFile) {
+                console.info('[Mp3Streamer] iTunes XML file selected', {
+                  fileName: selectedFile.name,
+                  sizeBytes: selectedFile.size,
+                });
+              }
+            }}
+            disabled={importingItunes}
+          />
+          <button className="settings-option" onClick={handleImportItunes} disabled={!itunesFile || importingItunes}>
+            {importingItunes ? 'Importing…' : 'Import iTunes Library.xml'}
+          </button>
+          {importMessage ? <p className="tags-error">{importMessage}</p> : null}
         </div>
 
         {FULLSCREEN_SUPPORTED ? (
