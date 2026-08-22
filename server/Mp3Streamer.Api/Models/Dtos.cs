@@ -17,11 +17,15 @@ public record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int
 
 public record FacetDto(string Name, int TrackCount);
 
-// AlbumArtTrackIds: up to 4 sample track ids, one per distinct album by this
-// artist — the frontend uses these to render a small cascaded stack of
-// album art thumbnails next to the artist name. Empty for genres (they use
-// plain FacetDto).
-public record ArtistDto(string Name, int TrackCount, int[] AlbumArtTrackIds);
+// AlbumArt: up to 4 sample (track id, album name) pairs, one per distinct
+// album by this artist — the frontend uses these to render a small
+// cascaded stack of album art thumbnails next to the artist name, each
+// clickable through to that album (needs the name) and hoverable for a
+// tooltip (also needs the name). Empty for genres (they use plain
+// FacetDto).
+public record ArtistDto(string Name, int TrackCount, AlbumArtDto[] AlbumArt);
+
+public record AlbumArtDto(int TrackId, string Album);
 
 public record AlbumDto(string Album, string? Artist, int TrackCount, int SampleTrackId);
 
@@ -63,3 +67,10 @@ public record BulkUpdateTagsRequest(
     bool SetAlbum, string? Album,
     bool SetGenre, string? Genre,
     bool SetYear, int? Year);
+
+// Carries the full track (same reasoning as PlayHistoryEntryDto above) so
+// the "Continue playing?" resume prompt has everything it needs — title,
+// artist, art — without a second round-trip.
+public record PlaybackStateDto(TrackDto Track, double PositionSeconds);
+
+public record SavePlaybackStateRequest(int TrackId, double PositionSeconds);

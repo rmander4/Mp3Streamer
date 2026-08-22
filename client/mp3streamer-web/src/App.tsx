@@ -18,6 +18,7 @@ import {
 import type { Album, Facet, PlaylistSummary, Track } from './api/types';
 import { usePlayer } from './player/PlayerContext';
 import { NowPlayingBar } from './player/NowPlayingBar';
+import { ResumePrompt } from './player/ResumePrompt';
 import './App.css';
 
 interface DrillDown {
@@ -131,7 +132,16 @@ function App() {
     }
 
     if (view === 'artists' && !drillDown) {
-      return <FacetList facets={artists} onSelect={(name) => setDrillDown({ kind: 'artist', value: name })} />;
+      return (
+        <FacetList
+          facets={artists}
+          onSelect={(name) => setDrillDown({ kind: 'artist', value: name })}
+          onSelectAlbum={(album) => {
+            setView('albums');
+            setDrillDown({ kind: 'album', value: album });
+          }}
+        />
+      );
     }
     if (view === 'genres' && !drillDown) {
       return <FacetList facets={genres} onSelect={(name) => setDrillDown({ kind: 'genre', value: name })} />;
@@ -198,6 +208,7 @@ function App() {
         </main>
       </div>
       <NowPlayingBar />
+      <ResumePrompt />
     </div>
   );
 }

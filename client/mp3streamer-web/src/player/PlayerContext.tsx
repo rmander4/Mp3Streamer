@@ -13,11 +13,17 @@ interface PlayerState {
   // re-selection (found via a real bug report: repeatedly clicking the
   // same track from History wasn't adding new history entries).
   selectionSeq: number;
+  // Set only when resuming from the cross-device "Continue playing?"
+  // prompt — tells NowPlayingBar to seek here once the track is ready,
+  // instead of starting from 0. Cleared immediately after being consumed,
+  // so it never leaks into a later, unrelated selection.
+  resumeSeconds: number | null;
 }
 
 interface PlayerContextValue extends PlayerState {
   currentTrack: Track | null;
-  playQueue: (tracks: Track[], startIndex: number) => void;
+  playQueue: (tracks: Track[], startIndex: number, resumeSeconds?: number) => void;
+  clearResumeSeconds: () => void;
   setIsPlaying: (playing: boolean) => void;
   setCurrentTrackRating: (rating: number) => void;
   setCurrentTrackFields: (updates: Partial<Track>) => void;
@@ -28,10 +34,26 @@ interface PlayerContextValue extends PlayerState {
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<PlayerState>({ queue: [], currentIndex: -1, isPlaying: false, selectionSeq: 0 });
+  const [state, setState] = useState<PlayerState>({
+    queue: [],
+    currentIndex: -1,
+    isPlaying: false,
+    selectionSeq: 0,
+    resumeSeconds: null,
+  });
 
-  const playQueue = useCallback((tracks: Track[], startIndex: number) => {
-    setState((s) => ({ queue: tracks, currentIndex: startIndex, isPlaying: true, selectionSeq: s.selectionSeq + 1 }));
+  const playQueue = useCallback((tracks: Track[], startIndex: number, resumeSeconds?: number) => {
+    setState((s) => ({
+      queue: tracks,
+      currentIndex: startIndex,
+      isPlaying: true,
+      selectionSeq: s.selectionSeq + 1,
+      resumeSeconds: resumeSeconds ?? null,
+    }));
+  }, []);
+
+  const clearResumeSeconds = useCallback(() => {
+    setState((s) => (s.resumeSeconds === null ? s : { ...s, resumeSeconds: null }));
   }, []);
 
   const setIsPlaying = useCallback((playing: boolean) => {
@@ -62,14 +84,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const next = useCallback(() => {
     setState((s) => {
       if (s.currentIndex + 1 >= s.queue.length) return { ...s, isPlaying: false };
-      return { ...s, currentIndex: s.currentIndex + 1, isPlaying: true, selectionSeq: s.selectionSeq + 1 };
+      return { ...s, currentIndex: s.currentIndex + 1, isPlaying: true, selectionSeq: s.selectionSeq + 1, resumeSeconds: null };
     });
   }, []);
 
   const previous = useCallback(() => {
     setState((s) => {
       if (s.currentIndex <= 0) return s;
-      return { ...s, currentIndex: s.currentIndex - 1, isPlaying: true, selectionSeq: s.selectionSeq + 1 };
+      return { ...s, currentIndex: s.currentIndex - 1, isPlaying: true, selectionSeq: s.selectionSeq + 1, resumeSeconds: null };
     });
   }, []);
 
@@ -80,13 +102,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       ...state,
       currentTrack,
       playQueue,
+      clearResumeSeconds,
       setIsPlaying,
       setCurrentTrackRating,
       setCurrentTrackFields,
       next,
       previous,
     }),
-    [state, currentTrack, playQueue, setIsPlaying, setCurrentTrackRating, setCurrentTrackFields, next, previous],
+    [state, currentTrack, playQueue, clearResumeSeconds, setIsPlaying, setCurrentTrackRating, setCurrentTrackFields, next, previous],
   );
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;

@@ -19,12 +19,18 @@ export interface PagedResult<T> {
   totalCount: number;
 }
 
+export interface AlbumArt {
+  trackId: number;
+  album: string;
+}
+
 export interface Facet {
   name: string;
   trackCount: number;
-  // Only populated for artists — up to 4 sample track ids (one per album)
-  // used to render a small cascaded album-art stack. Absent for genres.
-  albumArtTrackIds?: number[];
+  // Only populated for artists — up to 4 sample (track id, album name)
+  // pairs used to render a small cascaded album-art stack, each clickable
+  // through to that album and hoverable for a tooltip. Absent for genres.
+  albumArt?: AlbumArt[];
 }
 
 export interface Album {
@@ -50,4 +56,9 @@ export interface PlayHistoryEntry {
   id: number;
   track: Track;
   playedAtUtc: string;
+}
+
+export interface PlaybackState {
+  track: Track;
+  positionSeconds: number;
 }

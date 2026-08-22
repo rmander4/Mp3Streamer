@@ -1,4 +1,4 @@
-import type { Album, Facet, PagedResult, PlayHistoryEntry, PlaylistDetail, PlaylistSummary, Track } from './types';
+import type { Album, Facet, PagedResult, PlaybackState, PlayHistoryEntry, PlaylistDetail, PlaylistSummary, Track } from './types';
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -207,4 +207,23 @@ export async function scanLibrary(): Promise<ScanResult> {
     throw new Error(`Request failed: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+// 404 means "nothing saved" — an expected, common case (most sessions never
+// pause mid-track), not an error condition worth throwing over.
+export async function fetchPlaybackState(): Promise<PlaybackState | null> {
+  const res = await fetch('/api/playback-state');
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export function savePlaybackState(trackId: number, positionSeconds: number): Promise<void> {
+  return sendJson('/api/playback-state', 'PUT', { trackId, positionSeconds });
+}
+
+export function clearPlaybackState(): Promise<void> {
+  return sendJson('/api/playback-state', 'DELETE');
 }

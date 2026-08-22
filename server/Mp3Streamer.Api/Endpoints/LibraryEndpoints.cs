@@ -75,7 +75,7 @@ public static class LibraryEndpoints
                 .GroupBy(a => a.Artist)
                 .ToDictionary(
                     g => g.Key,
-                    g => g.OrderBy(a => a.Album).Take(4).Select(a => a.SampleTrackId).ToArray());
+                    g => g.OrderBy(a => a.Album).Take(4).Select(a => new AlbumArtDto(a.SampleTrackId, a.Album)).ToArray());
 
             var artists = trackCounts
                 .Select(a => new ArtistDto(a.Name, a.Count, albumArtByArtist.GetValueOrDefault(a.Name, [])))

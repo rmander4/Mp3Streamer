@@ -14,6 +14,49 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-22 — Ryan
+
+- Added cross-device "continue where you left off" playback resume — pause
+  a song in the car, open the site on the PC later, get prompted to pick
+  up right where it left off. Talked through the design with Ryan first:
+  - Save trigger is the `pause` event, not browser-close detection — Ryan's
+    own insight, since there's no reliable way to detect a tab/browser
+    closing (especially on mobile), but `pause` always fires deterministically
+    whenever playback actually stops. A periodic ~10s autosave during
+    playback is a backstop for the rare case `pause` never fires at all
+    (crash, phone force-killed).
+  - Deliberately *not* saved when a track ends naturally (`onEnded`) — only
+    a genuine mid-track pause is worth resuming. `onEnded` actively clears
+    any saved position instead, so a finished song never leaves a stale
+    resume prompt behind.
+  - On app load: if a position is saved, show a modal (art + title +
+    artist) — "Continue playing this track?" Yes/No. Yes seeks to the
+    saved position and starts playback immediately (a real button click,
+    so autoplay isn't blocked). No dismisses *and* clears the saved
+    position server-side — otherwise it'd just re-prompt next time for a
+    song already declined. (Discussed skipping the clear-on-decline as
+    redundant, since the next real pause/autosave overwrites it anyway —
+    but the gap where the user declines and never plays anything else
+    before closing again made explicit clearing the simpler choice.)
+  - Storage is server-side (new `PlaybackState` table — always at most one
+    row, `{TrackId, PositionSeconds, UpdatedAtUtc}`, overwritten each save),
+    not localStorage — the whole point is resuming on a *different* device,
+    so it has to live somewhere both devices can reach. New endpoints:
+    `GET/PUT/DELETE /api/playback-state`. Cascade-deletes if its track is
+    ever removed from the library, same pattern as PlayHistory.
+  - `PlayerContext.playQueue()` grew an optional `resumeSeconds` param;
+    `NowPlayingBar` seeks there once the track is buffered/ready (or via
+    the same live-stream handoff a manual seek past the buffered portion
+    already triggers, for a long track resumed near/past its buffer cap).
+  - Verified the whole flow on a separate test instance: no prompt when
+    nothing's saved, save-on-pause, resume-and-play, decline-and-clear,
+    natural-completion-clears, and the periodic backstop autosave actually
+    firing without an explicit pause — before deploying to the live
+    service (which required a migration; ran automatically via the
+    existing `db.Database.Migrate()` on startup, no manual DB step).
+
+---
+
 ## 2026-08-20 — Ryan (4)
 
 - Fixed a bug in voice search's error banner ("Speak to text search is not

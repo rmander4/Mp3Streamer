@@ -221,6 +221,50 @@
   cursor: default;
 }
 
+.resume-panel {
+  max-width: 340px;
+}
+
+.resume-track {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.resume-art {
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--code-bg);
+  flex-shrink: 0;
+}
+
+.resume-info {
+  min-width: 0;
+}
+
+.resume-title {
+  font-weight: 600;
+  color: var(--text-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-artist {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-question {
+  margin: 16px 0 0;
+  color: var(--text-h);
+}
+
 .sidebar ul {
   list-style: none;
   margin: 0;
@@ -459,6 +503,12 @@
   margin-left: 10px;
 }
 
+.album-art-item-wrap {
+  position: relative;
+  display: flex;
+  cursor: pointer;
+}
+
 .album-art-stack-item {
   width: 22px;
   height: 22px;
@@ -468,6 +518,37 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   background: var(--code-bg);
   flex-shrink: 0;
+}
+
+.album-art-item-wrap:hover .album-art-stack-item,
+.album-art-item-wrap:focus-visible .album-art-stack-item {
+  transform: scale(1.15);
+  border-color: var(--accent);
+}
+
+.album-art-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  color: var(--text-h);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 2;
+}
+
+.album-art-item-wrap:hover .album-art-tooltip,
+.album-art-item-wrap:focus-visible .album-art-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .album-art-stack-fallback {

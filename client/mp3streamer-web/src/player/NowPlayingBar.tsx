@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePlayer } from './PlayerContext';
-import { artworkUrl, recordPlay, setTrackRating, streamUrl } from '../api/client';
+import { artworkUrl, clearPlaybackState, recordPlay, savePlaybackState, setTrackRating, streamUrl } from '../api/client';
 import { formatDuration } from '../utils/format';
 import { FullScreenPlayer } from './FullScreenPlayer';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from './icons';
@@ -16,8 +16,25 @@ const MOBILE_QUERY = '(pointer: coarse), (max-width: 700px)';
 // estimate being a little optimistic (see bufferedSeconds in bufferTrack.ts).
 const HANDOFF_LEAD_SECONDS = 5;
 
+// How often to checkpoint the current position to the server while playing,
+// as a backstop for the cross-device resume feature — covers the case where
+// the browser/tab dies without ever firing a `pause` event (crash, phone
+// force-killed, battery dies), so a session is never more than this many
+// seconds of position out of date.
+const AUTOSAVE_INTERVAL_MS = 10_000;
+
 export function NowPlayingBar() {
-  const { currentTrack, isPlaying, setIsPlaying, setCurrentTrackRating, selectionSeq, next, previous } = usePlayer();
+  const {
+    currentTrack,
+    isPlaying,
+    setIsPlaying,
+    setCurrentTrackRating,
+    selectionSeq,
+    resumeSeconds,
+    clearResumeSeconds,
+    next,
+    previous,
+  } = usePlayer();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -85,6 +102,20 @@ export function NowPlayingBar() {
         const audio = audioRef.current;
         if (!audio) return;
         audio.src = blobUrl;
+
+        // Resuming from the cross-device "Continue playing?" prompt — seek
+        // to the saved position instead of starting from 0. Past what's
+        // actually buffered needs the same live-stream handoff a manual
+        // seek there would trigger (see swapToLiveStream/handleSeek below).
+        if (resumeSeconds != null) {
+          if (isPartial && resumeSeconds > bufferedSeconds - HANDOFF_LEAD_SECONDS) {
+            swapToLiveStream(resumeSeconds);
+          } else {
+            audio.currentTime = resumeSeconds;
+          }
+          clearResumeSeconds();
+        }
+
         audio.play().catch(() => {
           /* autoplay may be blocked until the user interacts with the page again */
         });
@@ -93,8 +124,17 @@ export function NowPlayingBar() {
         if (err?.name === 'AbortError') return;
         console.error('Failed to pre-buffer track, falling back to direct streaming', err);
         const audio = audioRef.current;
-        if (audio) {
-          audio.src = streamUrl(currentTrack.id);
+        if (!audio) return;
+        audio.src = streamUrl(currentTrack.id);
+        if (resumeSeconds != null) {
+          const seekOnLoad = () => {
+            audio.currentTime = resumeSeconds;
+            audio.play().catch(() => {});
+            audio.removeEventListener('loadedmetadata', seekOnLoad);
+          };
+          audio.addEventListener('loadedmetadata', seekOnLoad);
+          clearResumeSeconds();
+        } else {
           audio.play().catch(() => {});
         }
       })
@@ -111,6 +151,23 @@ export function NowPlayingBar() {
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
     };
   }, []);
+
+  // Cross-device resume: checkpoint the position periodically while
+  // playing, as a backstop for the case a `pause` event never fires at all
+  // (crash, phone force-killed, battery dies) — see handlePause below for
+  // the main save path.
+  useEffect(() => {
+    if (!isPlaying || !currentTrack) return;
+    const trackId = currentTrack.id;
+    const interval = window.setInterval(() => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      savePlaybackState(trackId, audio.currentTime).catch((err) => {
+        console.error('Failed to save playback position', err);
+      });
+    }, AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [isPlaying, currentTrack]);
 
   if (!currentTrack) {
     return null;
@@ -144,6 +201,29 @@ export function NowPlayingBar() {
     } else {
       audio.pause();
     }
+  };
+
+  // Cross-device resume: the main save path (the periodic autosave above is
+  // just a backstop). Deliberately skipped when the pause is really the
+  // track ending — a `pause` event fires right before `ended`, but there's
+  // nothing meaningful to resume once a track has actually finished (that
+  // case clears the saved position entirely instead — see handleEnded).
+  const handlePause = () => {
+    setIsPlaying(false);
+    const audio = audioRef.current;
+    if (!audio) return;
+    const nearEnd = audio.duration > 0 && audio.duration - audio.currentTime < 1;
+    if (nearEnd) return;
+    savePlaybackState(currentTrack.id, audio.currentTime).catch((err) => {
+      console.error('Failed to save playback position', err);
+    });
+  };
+
+  const handleEnded = () => {
+    clearPlaybackState().catch((err) => {
+      console.error('Failed to clear playback position', err);
+    });
+    next();
   };
 
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLAudioElement>) => {
@@ -207,9 +287,9 @@ export function NowPlayingBar() {
       <div className="now-playing-bar" onClick={openFullScreenOnMobile}>
         <audio
           ref={audioRef}
-          onEnded={next}
+          onEnded={handleEnded}
           onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
+          onPause={handlePause}
           onTimeUpdate={handleTimeUpdate}
           onStalled={handleStalled}
           onWaiting={handleStalled}

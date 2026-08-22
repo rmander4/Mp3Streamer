@@ -91,6 +91,9 @@ real album, and from a phone over the LAN):
 - `Endpoints/PlaylistEndpoints.cs` — full CRUD + `/reorder` for playlists
 - `Endpoints/HistoryEndpoints.cs` — play history (today-only, self-pruning —
   see Key decisions below) and the `HistoryEnabled` app setting
+- `Endpoints/PlaybackStateEndpoints.cs` — `GET/PUT/DELETE /api/playback-state`,
+  the cross-device "continue where you left off" resume feature — see Key
+  decisions below
 - `Program.cs` — wires everything up; also serves `wwwroot/` (the built
   frontend) via `UseDefaultFiles`/`UseStaticFiles` for single-port deploys
 
@@ -110,7 +113,10 @@ real album, and from a phone over the LAN):
   once from the server and shared (both `Sidebar`, to show/hide the History
   nav item, and every `SettingsPanel` instance need the same live value —
   see Key decisions below)
-- `player/PlayerContext.tsx` — queue/currentIndex/isPlaying via React Context
+- `player/PlayerContext.tsx` — queue/currentIndex/isPlaying via React Context;
+  `playQueue()` takes an optional `resumeSeconds` for the resume feature below
+- `player/ResumePrompt.tsx` — the cross-device "Continue playing this
+  track?" modal, fetched once on app load — see Key decisions below
 - `player/bufferTrack.ts` — pre-buffers a track into an in-memory Blob before
   playback starts (whole file if ≤5 min, else just the first 5 min), so a
   temporary connection drop doesn't interrupt playback
@@ -200,6 +206,15 @@ Worth knowing before you re-discover these the hard way:
   re-selecting the same track — `NowPlayingBar`'s track-change effect
   depends on that, not `currentTrack?.id`. If something needs to react to
   "a track was (re)selected" in the future, key off `selectionSeq`.
+- **The `<audio>` element's `pause` event also fires right before `ended`**
+  when a track finishes naturally, not just on a genuine user-initiated
+  pause. Matters for the playback-resume feature: saving on every `pause`
+  would otherwise save a useless "resume" position for a track that's
+  already over. `NowPlayingBar`'s `handlePause` guards against this with
+  `audio.duration - audio.currentTime < 1` rather than checking
+  `audio.ended` — the exact ordering of when the `ended` flag itself
+  becomes `true` relative to the `pause` event firing isn't consistent
+  enough across browsers to rely on.
 - **No authentication in v1** — deliberate, since it's LAN-only. Don't wire
   up anything internet-facing without building auth first (see below).
 - **A published exe's `ContentRootPath` defaults to the current directory,
@@ -396,6 +411,20 @@ Worth knowing before you re-discover these the hard way:
   detection, and error-banner styling in-browser (a sandboxed test browser
   can't grant real mic access, so full transcription-to-search-box
   behavior was verified live on Ryan's phone instead).
+- ✅ Cross-device playback resume — pause a track on one device, get
+  prompted to continue it on another. Saved on `pause` (not on natural
+  track-end — see the `PlaybackState` gotcha below) plus a ~10s periodic
+  backstop autosave during playback; stored server-side (`PlaybackState`
+  table, always at most one row) since the point is resuming on a
+  *different* device, which localStorage can't do. On app load,
+  `ResumePrompt` fetches the saved state and — if one exists — shows a
+  "Continue playing this track?" modal; Yes seeks and plays immediately
+  (a real click, so autoplay isn't blocked), No dismisses and clears the
+  saved position server-side (otherwise it'd just re-prompt next time for
+  a track already declined). Design was talked through with Ryan first —
+  full reasoning in `DEVLOG.md`'s 2026-08-22 entry, including why `pause`
+  (not browser-close detection, which isn't reliably catchable) is the
+  save trigger.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

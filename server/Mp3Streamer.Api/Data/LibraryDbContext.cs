@@ -10,6 +10,7 @@ public class LibraryDbContext(DbContextOptions<LibraryDbContext> options) : DbCo
     public DbSet<PlaylistTrack> PlaylistTracks => Set<PlaylistTrack>();
     public DbSet<PlayHistoryEntry> PlayHistory => Set<PlayHistoryEntry>();
     public DbSet<AppSetting> Settings => Set<AppSetting>();
+    public DbSet<PlaybackState> PlaybackState => Set<PlaybackState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,6 +29,12 @@ public class LibraryDbContext(DbContextOptions<LibraryDbContext> options) : DbCo
 
         modelBuilder.Entity<PlayHistoryEntry>()
             .HasIndex(h => h.PlayedAtUtc);
+
+        modelBuilder.Entity<PlaybackState>()
+            .HasOne(p => p.Track)
+            .WithMany()
+            .HasForeignKey(p => p.TrackId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<PlaylistTrack>()
             .HasOne(pt => pt.Playlist)
