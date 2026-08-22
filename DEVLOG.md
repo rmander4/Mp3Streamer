@@ -14,6 +14,40 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-22 — Earthwormzim
+
+- Added read-only iTunes Library XML import. The importer parses the plist
+  export into the local SQLite catalog, preserves iTunes Persistent IDs, and
+  converts iTunes file URLs into local Windows paths.
+- Added an iTunes catalog mode that skips the full MP3 filesystem scan and
+  watcher setup. Added the Settings file picker and import endpoint, including
+  support for the large XML export size.
+- Added browser and C# progress logging for upload/import phases. Fixed the
+  standard iTunes plist DTD handling while keeping external XML resolution
+  disabled.
+- Verified end-to-end against the backed-up XML: HTTP 200 and 23,970 tracks
+  imported, with 1 skipped. No `.itl`, XML, or MP3 files were modified.
+- Added section search fields with live match counts for Artists, Albums,
+  Genres, and Playlists. Albums search both album and artist names; the
+  other sections search their displayed names.
+- Added persisted browser volume control, album pagination options (20, 50,
+  100, or all), and album-art loading for iTunes-imported tracks. Artwork
+  requests now verify the actual MP3 instead of relying on incomplete XML
+  artwork metadata.
+- Rebuilt and reran the corrected XML importer after discovering incomplete
+  coverage. Verified 285,173 records processed, 285,168 tracks in SQLite,
+  and Lammoth present with valid paths and `IsMissing = false`.
+- Kept the content search header sticky while its main pane scrolls, and
+  applied the saved browser volume to the audio element on mount and before
+  each new buffered or live track source starts.
+- Extended the sticky content header across the main pane's top padding so
+  scrolled album cards cannot show behind the search panel.
+- Added a positioned background layer to cover the header's negative-margin
+  strip, preventing scrolled album art from appearing above the panel.
+- Added `AlbumArtist` catalog metadata and changed album grouping to use it,
+  falling back to `Artist` when unavailable. Reimported the XML and verified
+  `A.M.G.O.D.` is one 9-track album and `Cypher` is one 13-track album.
+
 ## 2026-08-20 — Ryan
 
 - Added a small album-art "stack" to the desktop Artists view: each artist

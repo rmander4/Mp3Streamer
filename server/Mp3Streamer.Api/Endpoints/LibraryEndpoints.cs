@@ -100,7 +100,7 @@ public static class LibraryEndpoints
         {
             var albums = await db.Tracks
                 .Where(t => t.Album != null)
-                .GroupBy(t => new { t.Album, t.Artist })
+                .GroupBy(t => new { t.Album, Artist = t.AlbumArtist ?? t.Artist })
                 .Select(g => new { g.Key.Album, g.Key.Artist, Count = g.Count(), SampleTrackId = g.Min(t => t.Id) })
                 .ToListAsync();
             return Results.Ok(albums
@@ -228,11 +228,18 @@ public static class LibraryEndpoints
             return Results.Ok(updated);
         });
 
-        app.MapGet("/api/tracks/{id:int}/artwork", async (int id, LibraryDbContext db) =>
+        app.MapGet("/api/tracks/{id:int}/artwork", async (int id, LibraryDbContext db, HttpContext httpContext) =>
         {
             var track = await db.Tracks.FindAsync(id);
-            if (track is null || !track.HasEmbeddedArt || !File.Exists(track.FilePath))
+            if (track is null || !File.Exists(track.FilePath))
                 return Results.NotFound();
+
+            var fileInfo = new FileInfo(track.FilePath);
+            var etag = $"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"";
+            httpContext.Response.Headers.CacheControl = "public,max-age=86400";
+            httpContext.Response.Headers.ETag = etag;
+            if (httpContext.Request.Headers.IfNoneMatch.Any(value => value == etag))
+                return Results.StatusCode(StatusCodes.Status304NotModified);
 
             using var tagFile = TagLib.File.Create(track.FilePath);
             var picture = tagFile.Tag.Pictures.FirstOrDefault();

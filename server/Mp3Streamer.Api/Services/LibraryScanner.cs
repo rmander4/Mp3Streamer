@@ -52,6 +52,7 @@ public class LibraryScanner(LibraryDbContext db, IConfiguration config, ILogger<
                         FilePath = path,
                         Title = string.IsNullOrWhiteSpace(tag.Title) ? Path.GetFileNameWithoutExtension(path) : tag.Title,
                         Artist = tag.FirstPerformer,
+                        AlbumArtist = tag.FirstAlbumArtist ?? tag.FirstPerformer,
                         Album = tag.Album,
                         Genre = tag.FirstGenre,
                         TrackNumber = tag.Track == 0 ? null : (int)tag.Track,
@@ -68,6 +69,7 @@ public class LibraryScanner(LibraryDbContext db, IConfiguration config, ILogger<
                 {
                     existing.Title = string.IsNullOrWhiteSpace(tag.Title) ? Path.GetFileNameWithoutExtension(path) : tag.Title;
                     existing.Artist = tag.FirstPerformer;
+                    existing.AlbumArtist = tag.FirstAlbumArtist ?? tag.FirstPerformer;
                     existing.Album = tag.Album;
                     existing.Genre = tag.FirstGenre;
                     existing.TrackNumber = tag.Track == 0 ? null : (int)tag.Track;

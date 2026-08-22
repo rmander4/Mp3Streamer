@@ -11,13 +11,20 @@ import {
 } from '../api/client';
 import { TrackList } from './TrackList';
 import { usePlayer } from '../player/PlayerContext';
+import { SearchBar } from './SearchBar';
 
-export function PlaylistPanel() {
+interface PlaylistPanelProps {
+  search: string;
+  onSearch: (term: string) => void;
+}
+
+export function PlaylistPanel({ search, onSearch }: PlaylistPanelProps) {
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<PlaylistDetail | null>(null);
   const [newName, setNewName] = useState('');
   const { playQueue, currentTrack, setCurrentTrackRating, setCurrentTrackFields } = usePlayer();
+  const filteredPlaylists = playlists.filter((playlist) => playlist.name.toLowerCase().includes(search.toLowerCase()));
 
   const reloadPlaylists = useCallback(() => {
     fetchPlaylists().then(setPlaylists);
@@ -103,6 +110,10 @@ export function PlaylistPanel() {
   return (
     <div className="playlist-panel">
       <div className="playlist-sidebar">
+        <div className="section-search-row playlist-search-row">
+          <SearchBar onSearch={onSearch} placeholder="Search playlists..." />
+          <span className="search-match-count">{filteredPlaylists.length} matches</span>
+        </div>
         <div className="playlist-create">
           <input
             type="text"
@@ -114,7 +125,7 @@ export function PlaylistPanel() {
           <button onClick={handleCreate}>Create</button>
         </div>
         <ul className="playlist-list">
-          {playlists.map((p) => (
+          {filteredPlaylists.map((p) => (
             <li key={p.id}>
               <button
                 className={p.id === selectedId ? 'facet-item active' : 'facet-item'}

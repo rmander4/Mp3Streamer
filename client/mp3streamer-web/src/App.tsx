@@ -25,23 +25,36 @@ interface DrillDown {
   value: string;
 }
 
+const SAVED_VIEW_KEY = 'mp3streamer.view';
+const VIEW_KEYS: ViewKey[] = ['all', 'artists', 'albums', 'genres', 'playlists', 'history'];
+
+function getSavedView(): ViewKey {
+  const saved = localStorage.getItem(SAVED_VIEW_KEY);
+  return saved && VIEW_KEYS.includes(saved as ViewKey) ? (saved as ViewKey) : 'all';
+}
+
 function App() {
-  const [view, setView] = useState<ViewKey>('all');
+  const [view, setView] = useState<ViewKey>(getSavedView);
   const [search, setSearch] = useState('');
+  const [sectionSearch, setSectionSearch] = useState('');
   const [drillDown, setDrillDown] = useState<DrillDown | null>(null);
 
   const [tracks, setTracks] = useState<Track[]>([]);
   const [artists, setArtists] = useState<Facet[]>([]);
   const [genres, setGenres] = useState<Facet[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [albumPageSize, setAlbumPageSize] = useState(50);
+  const [albumPage, setAlbumPage] = useState(1);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSelectView = useCallback((next: ViewKey) => {
     setView(next);
+    localStorage.setItem(SAVED_VIEW_KEY, next);
     setDrillDown(null);
     setSearch('');
+    setSectionSearch('');
     fetchPlaylists().then(setPlaylists);
   }, []);
 
@@ -59,6 +72,10 @@ function App() {
       fetchAlbums().then(setAlbums).catch((e) => setError(String(e)));
     }
   }, [view, drillDown]);
+
+  useEffect(() => {
+    setAlbumPage(1);
+  }, [sectionSearch]);
 
   useEffect(() => {
     const showTrackList = view === 'all' || drillDown !== null;
@@ -125,22 +142,32 @@ function App() {
     addTrackToPlaylist(playlistId, trackId).then(() => fetchPlaylists().then(setPlaylists));
   }, []);
 
+  const filteredAlbums = albums.filter((album) =>
+    `${album.album} ${album.artist ?? ''}`.toLowerCase().includes(sectionSearch.toLowerCase()),
+  );
+  const albumPageCount = albumPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredAlbums.length / albumPageSize));
+  const visibleAlbums = albumPageSize === 0
+    ? filteredAlbums
+    : filteredAlbums.slice((albumPage - 1) * albumPageSize, albumPage * albumPageSize);
+
   const renderContent = () => {
     if (error) {
       return <p className="error-state">{error}</p>;
     }
 
     if (view === 'artists' && !drillDown) {
-      return <FacetList facets={artists} onSelect={(name) => setDrillDown({ kind: 'artist', value: name })} />;
+      const filteredArtists = artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase()));
+      return <FacetList facets={filteredArtists} onSelect={(name) => setDrillDown({ kind: 'artist', value: name })} />;
     }
     if (view === 'genres' && !drillDown) {
-      return <FacetList facets={genres} onSelect={(name) => setDrillDown({ kind: 'genre', value: name })} />;
+      const filteredGenres = genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase()));
+      return <FacetList facets={filteredGenres} onSelect={(name) => setDrillDown({ kind: 'genre', value: name })} />;
     }
     if (view === 'albums' && !drillDown) {
-      return <AlbumGrid albums={albums} onSelect={(album) => setDrillDown({ kind: 'album', value: album.album })} />;
+      return <AlbumGrid albums={visibleAlbums} onSelect={(album) => setDrillDown({ kind: 'album', value: album.album })} />;
     }
     if (view === 'playlists') {
-      return <PlaylistPanel />;
+      return <PlaylistPanel search={sectionSearch} onSearch={setSectionSearch} />;
     }
     if (view === 'history') {
       return <HistoryPanel />;
@@ -193,6 +220,50 @@ function App() {
               </button>
             ) : null}
             {view === 'all' || drillDown ? <SearchBar onSearch={setSearch} /> : null}
+            {view !== 'all' && !drillDown && view !== 'playlists' && view !== 'history' ? (
+              <div className="section-search-row">
+                <SearchBar onSearch={setSectionSearch} placeholder={`Search ${view}...`} />
+                <span className="search-match-count">
+                  {view === 'artists'
+                    ? artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
+                    : view === 'albums'
+                      ? filteredAlbums.length
+                      : genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase())).length}{' '}
+                  matches
+                </span>
+                {view === 'albums' ? (
+                  <>
+                    <label className="album-page-size">
+                      <span>Show</span>
+                      <select
+                        value={albumPageSize}
+                        onChange={(event) => {
+                          setAlbumPageSize(Number(event.target.value));
+                          setAlbumPage(1);
+                        }}
+                        aria-label="Albums per page"
+                      >
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={0}>All</option>
+                      </select>
+                    </label>
+                    {albumPageSize !== 0 ? (
+                      <>
+                        <button className="page-button" onClick={() => setAlbumPage((page) => Math.max(1, page - 1))} disabled={albumPage === 1} aria-label="Previous album page">
+                          &larr;
+                        </button>
+                        <span className="page-status">{albumPage} / {albumPageCount}</span>
+                        <button className="page-button" onClick={() => setAlbumPage((page) => Math.min(albumPageCount, page + 1))} disabled={albumPage === albumPageCount} aria-label="Next album page">
+                          &rarr;
+                        </button>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           {renderContent()}
         </main>

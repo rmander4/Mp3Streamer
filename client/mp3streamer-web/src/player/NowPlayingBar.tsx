@@ -21,6 +21,10 @@ export function NowPlayingBar() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(() => {
+    const saved = Number.parseFloat(localStorage.getItem('mp3streamer.volume') ?? '');
+    return Number.isFinite(saved) ? Math.min(Math.max(saved, 0), 1) : 1;
+  });
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
 
@@ -41,6 +45,10 @@ export function NowPlayingBar() {
   // track, which used to silently no-op the re-selection entirely (found
   // via a real bug: repeatedly clicking the same track from History wasn't
   // recording new history entries, since this effect never re-ran).
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+  }, [volume]);
+
   useEffect(() => {
     setCurrentTime(0);
     isPartialRef.current = false;
@@ -84,6 +92,7 @@ export function NowPlayingBar() {
         bufferedSecondsRef.current = bufferedSeconds;
         const audio = audioRef.current;
         if (!audio) return;
+        audio.volume = volume;
         audio.src = blobUrl;
         audio.play().catch(() => {
           /* autoplay may be blocked until the user interacts with the page again */
@@ -94,6 +103,7 @@ export function NowPlayingBar() {
         console.error('Failed to pre-buffer track, falling back to direct streaming', err);
         const audio = audioRef.current;
         if (audio) {
+          audio.volume = volume;
           audio.src = streamUrl(currentTrack.id);
           audio.play().catch(() => {});
         }
@@ -189,6 +199,13 @@ export function NowPlayingBar() {
     setCurrentTime(value);
   };
 
+  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(e.target.value);
+    setVolume(value);
+    if (audioRef.current) audioRef.current.volume = value;
+    localStorage.setItem('mp3streamer.volume', String(value));
+  };
+
   const openFullScreenOnMobile = () => {
     if (window.matchMedia(MOBILE_QUERY).matches) {
       setIsFullScreen(true);
@@ -251,6 +268,17 @@ export function NowPlayingBar() {
           />
           <span>{formatDuration(duration)}</span>
         </div>
+        <div className="player-volume" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={volume}
+            onChange={handleVolume}
+            aria-label="Volume"
+          />
+        </div>
       </div>
 
       {isFullScreen ? (
@@ -260,7 +288,9 @@ export function NowPlayingBar() {
           isBuffering={isBuffering}
           currentTime={currentTime}
           duration={duration}
+          volume={volume}
           onSeek={handleSeek}
+          onVolumeChange={handleVolume}
           onTogglePlay={togglePlayback}
           onNext={next}
           onPrevious={previous}
