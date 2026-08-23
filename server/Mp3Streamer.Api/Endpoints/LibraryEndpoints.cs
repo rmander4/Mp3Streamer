@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mp3Streamer.Api.Data;
 using Mp3Streamer.Api.Models;
@@ -247,6 +248,21 @@ public static class LibraryEndpoints
             if (track is null || !File.Exists(track.FilePath))
                 return Results.NotFound();
 
+            // Picture existence must be checked *before* setting any cache
+            // headers — setting Cache-Control unconditionally meant a
+            // track's first "no art yet" 404 got cached by the browser for
+            // a full day right along with real 200 responses. Adding art
+            // later (single or bulk edit) to a track that started with
+            // none wouldn't show up until that cache expired or a hard
+            // refresh forced it — confirmed by reproduction: a plain
+            // fetch() with cache disabled got the fresh image immediately,
+            // but the <img> tag kept rendering broken because it re-used
+            // the stale cached 404 from before the edit.
+            using var tagFile = TagLib.File.Create(track.FilePath);
+            var picture = tagFile.Tag.Pictures.FirstOrDefault();
+            if (picture is null)
+                return Results.NotFound();
+
             var fileInfo = new FileInfo(track.FilePath);
             var etag = $"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"";
             httpContext.Response.Headers.CacheControl = "public,max-age=86400";
@@ -254,13 +270,45 @@ public static class LibraryEndpoints
             if (httpContext.Request.Headers.IfNoneMatch.Any(value => value == etag))
                 return Results.StatusCode(StatusCodes.Status304NotModified);
 
-            using var tagFile = TagLib.File.Create(track.FilePath);
-            var picture = tagFile.Tag.Pictures.FirstOrDefault();
-            if (picture is null)
-                return Results.NotFound();
-
             return Results.File(picture.Data.Data, string.IsNullOrWhiteSpace(picture.MimeType) ? "image/jpeg" : picture.MimeType);
         });
+
+        // Replaces the track's embedded art entirely (a single new picture
+        // takes over whatever was there before, or becomes the art if there
+        // was none) — same code path handles both cases, since assigning a
+        // single-element Pictures array is idempotent either way. Editing
+        // the file changes its mtime, which the GET endpoint above already
+        // keys its ETag on, so browser-cached art is naturally invalidated
+        // without any extra cache-busting logic needed here.
+        app.MapPut("/api/tracks/{id:int}/artwork", async (int id, IFormFile file, LibraryDbContext db) =>
+        {
+            var track = await db.Tracks.FindAsync(id);
+            if (track is null || !File.Exists(track.FilePath))
+                return Results.NotFound();
+            if (file.Length == 0)
+                return Results.BadRequest("No image file provided.");
+
+            await using var ms = new MemoryStream();
+            await file.CopyToAsync(ms);
+            var picture = new TagLib.Picture(new TagLib.ByteVector(ms.ToArray()))
+            {
+                Type = TagLib.PictureType.FrontCover,
+                MimeType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType,
+            };
+
+            using (var tagFile = TagLib.File.Create(track.FilePath))
+            {
+                tagFile.Tag.Pictures = [picture];
+                tagFile.Save();
+            }
+
+            track.HasEmbeddedArt = true;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new TrackDto(
+                track.Id, track.Title ?? "Untitled", track.Artist, track.Album, track.Genre,
+                track.TrackNumber, track.Year, track.DurationSeconds, track.HasEmbeddedArt, track.Rating, track.IsMissing));
+        }).DisableAntiforgery();
 
         app.MapGet("/api/settings/remove-missing-tracks", async (LibraryDbContext db) =>
         {

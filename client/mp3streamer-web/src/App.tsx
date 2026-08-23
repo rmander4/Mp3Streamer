@@ -194,7 +194,13 @@ function App() {
       return <FacetList facets={filteredGenres} onSelect={(name) => setDrillDown({ kind: 'genre', value: name })} />;
     }
     if (view === 'albums' && !drillDown) {
-      return <AlbumGrid albums={visibleAlbums} onSelect={(album) => setDrillDown({ kind: 'album', value: album.album })} />;
+      return (
+        <AlbumGrid
+          albums={visibleAlbums}
+          onSelect={(album) => setDrillDown({ kind: 'album', value: album.album })}
+          onTracksEdited={() => fetchAlbums().then(setAlbums).catch((e) => setError(String(e)))}
+        />
+      );
     }
     if (view === 'playlists') {
       return <PlaylistPanel search={sectionSearch} onSearch={setSectionSearch} />;

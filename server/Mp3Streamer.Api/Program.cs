@@ -74,7 +74,33 @@ if (app.Environment.IsDevelopment())
 
 app.UseAntiforgery();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // Without any explicit Cache-Control, ASP.NET Core's default static
+    // file handling only sends ETag/Last-Modified — which lets browsers
+    // apply their own heuristic caching, and heuristics can decide a page
+    // is "fresh" for a long time with zero revalidation. For index.html
+    // specifically that's a real problem: after every redeploy it embeds
+    // a *new* content-hashed JS/CSS filename, but a browser sitting on a
+    // heuristically-cached copy of the old index.html would keep loading
+    // the old bundle indefinitely, with no visible sign anything's wrong
+    // — confirmed by reproduction (missing Cache-Control on this exact
+    // path), and very plausibly the real cause behind several "I tested
+    // and it's still broken" reports this session that turned out to
+    // actually be fixed server-side already.
+    //
+    // The content-hashed /assets/* files Vite builds are the opposite
+    // case — their filename itself changes whenever their content does,
+    // so they're safe to cache aggressively and permanently.
+    OnPrepareResponse = ctx =>
+    {
+        var path = ctx.File.PhysicalPath ?? string.Empty;
+        var isHashedAsset = path.Replace('\\', '/').Contains("/assets/");
+        ctx.Context.Response.Headers.CacheControl = isHashedAsset
+            ? "public,max-age=31536000,immutable"
+            : "no-cache";
+    },
+});
 
 app.MapPost("/api/library/scan", async (LibraryScanner scanner, CancellationToken ct) =>
 {

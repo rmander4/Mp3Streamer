@@ -242,6 +242,37 @@ Worth knowing before you re-discover these the hard way:
   siblings, don't reach for `ReadToFollowing` — it's for finding a
   specific descendant anywhere ahead in the document, not for walking a
   known, bounded set of siblings.
+- **Static files (including `index.html`) had no explicit `Cache-Control`
+  by default.** `UseStaticFiles()` alone only sends `ETag`/`Last-Modified`,
+  which leaves browsers free to apply their own heuristic caching. For
+  `index.html` specifically that's a real problem — every redeploy embeds
+  a *new* content-hashed JS/CSS filename, but a browser sitting on a
+  heuristically-cached copy of the old `index.html` keeps loading the old
+  bundle indefinitely, with zero visible sign anything's wrong. Very
+  plausibly the real cause behind several "I tested and it's still
+  broken" reports across this project that turned out to already be
+  fixed server-side. Fixed via `StaticFileOptions.OnPrepareResponse` in
+  `Program.cs`: non-hashed files (`index.html`, favicon, etc.) get
+  `Cache-Control: no-cache` (always revalidate); Vite's content-hashed
+  `/assets/*` files get `public,max-age=31536000,immutable` instead,
+  since their filename itself changes whenever their content does. If a
+  future session sees "I redeployed but nothing changed" and the server
+  genuinely has the new code, suspect this class of bug first — same
+  root cause once bit `/api/tracks/{id}/artwork` too (see its own
+  comment in `LibraryEndpoints.cs`: it was setting a 24-hour
+  `Cache-Control` even on a 404 for a track with no art yet).
+- **The dev/test environment was never actually isolated from
+  production.** `appsettings.Development.json` only overrides
+  `LibraryRootPaths`, not `ConnectionStrings` — so `dotnet run` on port
+  5289 was reading and writing the *same* production `library.db` and
+  the *same* real MP3 files as the live Windows Service the whole time.
+  This caused real damage 2026-08-24: test artwork uploads (solid color
+  test squares) overwrote real album art with no backup taken first —
+  see that date's DEVLOG entries for exactly which tracks. Give the dev
+  environment its own database file and a small copied subset of MP3s
+  before doing any more testing that writes data, especially anything
+  touching embedded artwork (which lives in the files themselves, not
+  just the DB, so there's no "just don't commit it" undo).
 - **No authentication in v1** — deliberate, since it's LAN-only. Don't wire
   up anything internet-facing without building auth first (see below).
 - **A published exe's `ContentRootPath` defaults to the current directory,
@@ -452,6 +483,13 @@ Worth knowing before you re-discover these the hard way:
   full reasoning in `DEVLOG.md`'s 2026-08-22 entry, including why `pause`
   (not browser-close detection, which isn't reliably catchable) is the
   save trigger.
+- ✅ Album art editing (single + bulk ID3 editors) — a "Browse…" button
+  replaces the embedded picture entirely via `PUT /api/tracks/{id}/artwork`.
+  Bulk uploads go one request per track (not one atomic bulk call) with a
+  real progress bar, since a multi-MB image times two dozen-plus tracks
+  genuinely takes a while. Right-click (or long-press) an album card in
+  the Albums grid also opens the bulk editor for that whole album, same
+  as selecting all its tracks from the track list would.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

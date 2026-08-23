@@ -146,6 +146,16 @@ export async function updateTracksBulkTags(request: BulkUpdateTagsRequest): Prom
   return res.json();
 }
 
+export async function updateTrackArtwork(trackId: number, file: File): Promise<Track> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`/api/tracks/${trackId}/artwork`, { method: 'PUT', body: form });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export function streamUrl(trackId: number): string {
   return `/api/tracks/${trackId}/stream`;
 }

@@ -14,6 +14,74 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (3)
+
+- Added album art editing to both the single-track and bulk ID3 editors —
+  a "Browse…" button that replaces the embedded picture entirely (same
+  code path handles "had no art" and "replace existing art", since
+  assigning a single-element `Pictures` array is idempotent either way).
+  New `PUT /api/tracks/{id}/artwork` endpoint (`IFormFile`, needs
+  `.DisableAntiforgery()` like the iTunes import endpoint).
+- Added: right-click (or long-press) an album card in the Albums grid →
+  "Edit ID3 Tags" opens the same bulk editor as selecting every one of
+  that album's tracks from the track list, fetching them via
+  `fetchTracks({ album, artist })` first.
+- Bulk album-art upload switched from one atomic bulk endpoint to
+  sequential per-track requests with a real progress bar — a multi-MB
+  image times two dozen-plus tracks (each a full file rewrite via
+  TagLibSharp) genuinely takes a while, and a single opaque request gave
+  no way to show progress. Continues past a single track's failure rather
+  than aborting the whole batch. Removed the now-unused
+  `PUT /api/tracks/bulk-artwork` endpoint and its client function.
+- **Found and fixed two real, fairly serious caching bugs** while
+  building this:
+  - `/api/tracks/{id}/artwork` set `Cache-Control: public,max-age=86400`
+    *before* checking whether the track actually had a picture — so a
+    track's first "no art yet" 404 got cached by the browser for a full
+    day right alongside real 200s. Adding art later to a previously
+    art-less track wouldn't show up until that cache expired or a hard
+    refresh forced it. Fixed by moving the cache headers to after
+    confirming a picture exists.
+  - Bigger one: static files (`index.html` included) had no explicit
+    `Cache-Control` at all — ASP.NET Core's default `UseStaticFiles()`
+    only sends `ETag`/`Last-Modified`, which lets browsers apply their
+    own heuristic caching. For `index.html` specifically, that's a real
+    problem: every redeploy embeds a *new* content-hashed JS/CSS
+    filename, but a browser sitting on a heuristically-cached copy of the
+    old `index.html` keeps loading the old bundle indefinitely with no
+    visible sign anything's wrong. Very plausibly the actual cause behind
+    several "I tested and it's still broken" reports this session that
+    turned out to already be fixed server-side. Fixed in `Program.cs` via
+    `StaticFileOptions.OnPrepareResponse`: `index.html` (and other
+    non-hashed files) now get `Cache-Control: no-cache` (always
+    revalidate, cheap 304 if unchanged); Vite's content-hashed `/assets/*`
+    files get `public,max-age=31536000,immutable` instead, since their
+    filename itself changes whenever their content does.
+- Fixed album grid card misalignment: a long album title (e.g.
+  "Something Wicked This Way Comes") wrapped to 3 lines and made that
+  card taller than its row-mates. `.album-card-title` now clamps to 2
+  lines with a matching `min-height`, so every card reserves the same
+  text height regardless of actual title length — verified all cards in
+  a row report the identical height afterward, long-title one included.
+- **Important process mistake, worth any future session reading this
+  knowing about**: discovered mid-session that the "test instance" on
+  port 5289 (`dotnet run`, Development environment) was never actually
+  isolated from production — `appsettings.Development.json` only
+  overrides `LibraryRootPaths`, not `ConnectionStrings`, so it inherits
+  the *same* production `library.db` and the *same* real MP3 files from
+  the base `appsettings.json`. Several rounds of artwork-upload testing
+  this session wrote real test images (solid color squares) directly
+  into real files before this was noticed — confirmed corrupted as of
+  this entry: track 246 ("Warheart," Children of Bodom / Hatebreeder,
+  single track) and all 28 tracks of Kalisia's "Cybion." No backup was
+  taken before overwriting, so the original art for both is gone unless
+  Ryan has it saved elsewhere. Proposed to Ryan but not yet done: give
+  the dev environment its own database file and a small copied subset of
+  MP3s to test against, so this class of mistake becomes structurally
+  impossible rather than just "be more careful next time."
+
+---
+
 ## 2026-08-24 — Ryan (2)
 
 - Fixed an empty gap where the Mini Player goes, showing up even with no
