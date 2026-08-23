@@ -10,6 +10,12 @@
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+/* Only reserve space for the Mini Player when one is actually rendered
+   (a track is loaded) — otherwise this left a permanent empty gap at the
+   bottom of the screen even with nothing playing. */
+.body-row.has-now-playing {
   padding-bottom: 84px;
 }
 
@@ -1124,9 +1130,24 @@
   color: #d33;
 }
 
+/* Matches the JS MOBILE_QUERY constant's touch-detection (pointer: coarse)
+   rather than just width — a landscape phone is often wider than 700px
+   and would otherwise fall through to the plain max-width block below
+   and keep showing this (known gap, see CLAUDE.md's "Mobile detection"
+   note: the CSS layout breakpoint is normally width-only, unlike the JS
+   one, but this rule specifically needs the touch-aware version). */
+@media (pointer: coarse), (max-width: 700px) {
+  .player-volume {
+    display: none;
+  }
+}
+
 @media (max-width: 700px) {
   .body-row {
     flex-direction: column;
+  }
+
+  .body-row.has-now-playing {
     padding-bottom: 76px;
   }
 
@@ -1266,10 +1287,6 @@
   }
 
   .now-playing-seek span {
-    display: none;
-  }
-
-  .player-volume {
     display: none;
   }
 

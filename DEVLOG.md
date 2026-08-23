@@ -14,6 +14,33 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (2)
+
+- Fixed an empty gap where the Mini Player goes, showing up even with no
+  track playing. `.body-row` was unconditionally reserving 84px (76px on
+  mobile) of bottom padding for it, regardless of whether `NowPlayingBar`
+  actually rendered anything (it correctly renders `null` with no
+  `currentTrack`). Fixed by only applying that padding via a new
+  `has-now-playing` class on `.body-row`, added in `App.tsx` when
+  `currentTrack` is truthy — verified directly via the DOM that padding
+  is `0px` idle and `76px`/`84px` once a track loads.
+- Ryan asked to emulate mobile landscape to show a bug, which surfaced a
+  second one along the way: the volume slider (Earthwormzim's) was still
+  showing up at that width. Root cause: its `display: none` only lived
+  inside the plain `@media (max-width: 700px)` block — the known
+  width-only-breakpoint gap already documented in `CLAUDE.md`'s "Mobile
+  detection" note, since a landscape phone is often wider than 700px.
+  Fixed by moving it to its own `@media (pointer: coarse), (max-width:
+  700px)` block, matching the same touch-aware pattern the JS
+  `MOBILE_QUERY` constant already uses. Verified the `pointer: coarse`
+  half of the query actually works (narrow-width test with touch
+  emulation correctly hides it) — couldn't verify the exact "wide +
+  touch" combination in-tool, since the browser automation here only
+  emulates touch under 768px width; flagged that limitation to Ryan and
+  had him confirm on his own phone in landscape instead.
+
+---
+
 ## 2026-08-24 — Ryan
 
 - Fixed a real bug Earthwormzim hit on his ~285k-track library: typing in

@@ -240,7 +240,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <div className="body-row">
+      <div className={`body-row${currentTrack ? ' has-now-playing' : ''}`}>
         <Sidebar active={view} onSelect={handleSelectView} />
         <main className="main-content">
           <div className="content-header">
