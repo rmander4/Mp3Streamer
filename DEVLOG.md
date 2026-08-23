@@ -14,6 +14,39 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-22 — Ryan (2)
+
+- Merged in Earthwormzim's changes (iTunes XML import, section search,
+  volume control, album pagination, `AlbumArtist`-based album grouping —
+  see his entry below) with the playback-resume/album-art work from
+  earlier today. Branches had diverged (4 local commits, 2 remote), so
+  this was a real merge, not a fast-forward. Conflicts in `DEVLOG.md`,
+  `App.tsx`, `api/client.ts`, and `NowPlayingBar.tsx` — all resolved by
+  keeping both sides' additions (e.g. `App.tsx`'s Artists view now has
+  both his search-filtering *and* the album-art click-to-navigate
+  behavior; `NowPlayingBar.tsx` has both his volume control and the
+  resume-seek logic in the direct-streaming fallback path). Verified the
+  merge produced a semantically correct EF migrations snapshot (both his
+  two new migrations and mine) by generating a throwaway
+  `dotnet ef migrations add` afterward and confirming it came out
+  completely empty — no undetected schema drift — then removed it.
+  Verified both frontend and backend still build cleanly afterward.
+- Found and fixed a real problem during the merge: `appsettings.json`
+  (the production config — DB path, music library path) had been tracked
+  in git this whole time, and the merge silently overwrote Ryan's real
+  local values with Earthwormzim's own machine-specific paths (`E:\Music\HQ`,
+  a `C:\Projects\...` DB path) — caught by comparing against the
+  currently-*deployed* `publish/appsettings.json` before committing
+  anything. Restored Ryan's real values. Per Ryan's request, un-versioned
+  `appsettings.json` going forward: it's now gitignored (kept locally,
+  never committed) with a new `appsettings.json.example` template
+  checked in instead for fresh setups to copy from.
+  `appsettings.Development.json` stays tracked as-is — it only has a
+  relative path (`../../Music`), which is the same for any checkout, not
+  a per-machine value like the production config.
+
+---
+
 ## 2026-08-22 — Ryan
 
 - Added cross-device "continue where you left off" playback resume — pause
@@ -128,6 +161,42 @@ Newest entries go at the top.
 - Both changes verified on a separate test instance (port 5289, including
   measuring actual pixel positions in-browser) before Ryan stopped/started
   the live Windows Service to deploy each one.
+
+---
+
+## 2026-08-22 — Earthwormzim
+
+- Added read-only iTunes Library XML import. The importer parses the plist
+  export into the local SQLite catalog, preserves iTunes Persistent IDs, and
+  converts iTunes file URLs into local Windows paths.
+- Added an iTunes catalog mode that skips the full MP3 filesystem scan and
+  watcher setup. Added the Settings file picker and import endpoint, including
+  support for the large XML export size.
+- Added browser and C# progress logging for upload/import phases. Fixed the
+  standard iTunes plist DTD handling while keeping external XML resolution
+  disabled.
+- Verified end-to-end against the backed-up XML: HTTP 200 and 23,970 tracks
+  imported, with 1 skipped. No `.itl`, XML, or MP3 files were modified.
+- Added section search fields with live match counts for Artists, Albums,
+  Genres, and Playlists. Albums search both album and artist names; the
+  other sections search their displayed names.
+- Added persisted browser volume control, album pagination options (20, 50,
+  100, or all), and album-art loading for iTunes-imported tracks. Artwork
+  requests now verify the actual MP3 instead of relying on incomplete XML
+  artwork metadata.
+- Rebuilt and reran the corrected XML importer after discovering incomplete
+  coverage. Verified 285,173 records processed, 285,168 tracks in SQLite,
+  and Lammoth present with valid paths and `IsMissing = false`.
+- Kept the content search header sticky while its main pane scrolls, and
+  applied the saved browser volume to the audio element on mount and before
+  each new buffered or live track source starts.
+- Extended the sticky content header across the main pane's top padding so
+  scrolled album cards cannot show behind the search panel.
+- Added a positioned background layer to cover the header's negative-margin
+  strip, preventing scrolled album art from appearing above the panel.
+- Added `AlbumArtist` catalog metadata and changed album grouping to use it,
+  falling back to `Artist` when unavailable. Reimported the XML and verified
+  `A.M.G.O.D.` is one 9-track album and `Cypher` is one 13-track album.
 
 ---
 

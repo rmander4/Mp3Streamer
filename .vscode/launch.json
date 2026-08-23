@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Mp3Streamer API",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/Mp3Streamer.Api/bin/Debug/net10.0/Mp3Streamer.Api.exe",
+      "cwd": "${workspaceFolder}/server/Mp3Streamer.Api",
+      "console": "integratedTerminal",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Production"
+      }
+    }
+  ]
+}

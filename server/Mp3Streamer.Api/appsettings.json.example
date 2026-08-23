@@ -1,0 +1,19 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "Urls": "http://0.0.0.0:5288",
+  "ConnectionStrings": {
+    "Library": "Data Source=C:\\path\\to\\Mp3Streamer\\server\\Mp3Streamer.Api\\library.db"
+  },
+  "LibraryRootPaths": [ "C:\\path\\to\\your\\Music" ]
+
+  // Optional — only needed if importing a library from an iTunes XML export
+  // instead of scanning LibraryRootPaths from disk. See DEVLOG.md for the
+  // iTunes import feature.
+  // "CatalogSource": "ItunesXml"
+}

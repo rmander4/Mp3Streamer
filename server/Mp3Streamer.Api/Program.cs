@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http.Features;
 using Mp3Streamer.Api.Data;
 using Mp3Streamer.Api.Endpoints;
 using Mp3Streamer.Api.Services;
@@ -13,6 +14,16 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 1024L * 1024 * 1024;
+});
+builder.Services.AddAntiforgery();
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 1024L * 1024 * 1024;
+});
+
 // No-ops when run normally (dotnet run, console); wires up proper start/stop
 // lifecycle handling with the Service Control Manager when actually running
 // as a Windows Service, so the same published exe works both ways.
@@ -24,6 +35,7 @@ builder.Services.AddDbContext<LibraryDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Library")));
 
 builder.Services.AddScoped<LibraryScanner>();
+builder.Services.AddScoped<ItunesXmlImporter>();
 builder.Services.AddHostedService<LibraryWatcherService>();
 
 builder.Services.AddCors(options =>
@@ -48,6 +60,7 @@ if (app.Environment.IsDevelopment())
     app.UseCors("DevClient");
 }
 
+app.UseAntiforgery();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -56,6 +69,19 @@ app.MapPost("/api/library/scan", async (LibraryScanner scanner, CancellationToke
     var result = await scanner.ScanAsync(ct);
     return Results.Ok(result);
 });
+
+app.MapPost("/api/library/import-itunes", async (
+    IFormFile file,
+    ItunesXmlImporter importer,
+    CancellationToken ct) =>
+{
+    if (file.Length == 0 || !Path.GetExtension(file.FileName).Equals(".xml", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest("Choose an iTunes XML file.");
+
+    await using var stream = file.OpenReadStream();
+    var result = await importer.ImportAsync(stream, ct);
+    return Results.Ok(result);
+}).DisableAntiforgery();
 
 app.MapLibraryEndpoints();
 app.MapPlaylistEndpoints();

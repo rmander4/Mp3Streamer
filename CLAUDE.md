@@ -543,6 +543,19 @@ expose this to the internet.
      carry over instead of starting from an empty database.
    - `LibraryRootPaths` — full absolute path to the real music folder.
 
+   **`appsettings.json` itself is gitignored, not committed** (as of
+   2026-08-22) — it holds absolute, per-machine paths (DB location, music
+   folder), and Ryan and his brother's real values are different and were
+   silently clobbering each other on every merge/pull. Each of you keeps
+   your own local copy, started from `appsettings.json.example` (which
+   *is* committed, with placeholder paths, as the template). If a
+   redeploy or fresh clone is ever missing `appsettings.json`, copy the
+   `.example` file and fill in the real paths — don't recreate it from
+   scratch or guess at the schema. `appsettings.Development.json` is
+   still committed as normal — it uses a relative path (`../../Music`),
+   which is the same for anyone's checkout, so it isn't per-machine the
+   way the production config is.
+
 **One-time setup** (needs an elevated/Administrator PowerShell — Claude
 cannot self-elevate, so this step has to be run by Ryan or his brother
 directly, not by a Claude session):

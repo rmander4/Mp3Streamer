@@ -7,6 +7,12 @@ obj/
 server/Mp3Streamer.Api/wwwroot/
 server/Mp3Streamer.Api/publish/
 
+## Per-machine production config (absolute DB/library paths differ between
+## Ryan's and his brother's machines) — see appsettings.json.example for the
+## template. Deliberately NOT appsettings.Development.json, which uses a
+## relative path and is the same for everyone's checkout.
+server/Mp3Streamer.Api/appsettings.json
+
 ## Node / Vite
 node_modules/
 dist/

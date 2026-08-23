@@ -227,3 +227,38 @@ export function savePlaybackState(trackId: number, positionSeconds: number): Pro
 export function clearPlaybackState(): Promise<void> {
   return sendJson('/api/playback-state', 'DELETE');
 }
+
+export interface ItunesImportResult {
+  imported: number;
+  skipped: number;
+}
+
+export function importItunesXml(
+  file: File,
+  onUploadProgress?: (loadedBytes: number, totalBytes: number) => void,
+): Promise<ItunesImportResult> {
+  const form = new FormData();
+  form.append('file', file);
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', '/api/library/import-itunes');
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onUploadProgress?.(event.loaded, event.total);
+    });
+    request.addEventListener('load', () => {
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(`Request failed: ${request.status} ${request.statusText}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(request.responseText) as ItunesImportResult);
+      } catch {
+        reject(new Error('The server returned an invalid import response.'));
+      }
+    });
+    request.addEventListener('error', () => reject(new Error('The XML upload failed.')));
+    request.addEventListener('abort', () => reject(new Error('The XML upload was cancelled.')));
+    request.send(form);
+  });
+}
