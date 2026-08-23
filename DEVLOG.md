@@ -14,6 +14,100 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan
+
+- Fixed a real bug Earthwormzim hit on his ~285k-track library: typing in
+  the "All Tracks" search box made the results flicker/"refresh" without
+  ever settling, instead of actually filtering. Root cause was in
+  `App.tsx`'s track-fetching effect — it fired a new `fetchTracks()` call
+  on every search but never cancelled the previous one, so on a library
+  large enough that searches take a noticeable amount of time (the
+  `%term%` LIKE pattern can't use an index, forcing a full table scan),
+  overlapping requests could resolve out of order and repeatedly
+  overwrite fresh results with stale ones. Ryan's small library never hit
+  this — searches resolve too fast for the race window to matter. Fixed
+  with an `AbortController` per search, cancelling the previous in-flight
+  request whenever a new one starts (`api/client.ts`'s `fetchTracks` now
+  takes an optional `AbortSignal`). Verified by patching `window.fetch` in
+  a test browser to simulate a slow backend and confirming stale requests
+  actually got aborted rather than just hoping the timing worked out.
+- Investigated a report from Ryan: several different tracks kept playing
+  successfully while he was outside the LAN (no route to the server at
+  all). Worried it meant the single-track Blob buffering
+  (`bufferTrack.ts`) wasn't being cleaned up and multiple tracks were
+  piling up in memory. Verified that's not what's happening —
+  `NowPlayingBar.tsx` already revokes the previous track's Blob URL
+  before buffering a new one, confirmed by re-reading the effect. The
+  actual cause: `/api/tracks/{id}/stream` sent no `Cache-Control` header
+  at all (just `Last-Modified`), which lets browsers heuristically cache
+  full audio byte ranges to disk indefinitely, completely outside the
+  app's own buffering logic — so previously-streamed tracks kept working
+  offline well after their in-memory Blob was long gone. Ryan's specific
+  worry (2026-08-24): "thousands of songs still working... like a cache
+  that isn't clearing out" over time, for a library that size. Fixed by
+  sending `Cache-Control: no-store` on the stream endpoint — offline
+  playback is now strictly limited to whichever one track the app's own
+  buffering is actively holding, nothing more.
+
+---
+
+## 2026-08-23 — Ryan
+
+- Ryan wanted his own library imported via the same `ItunesXmlImporter.cs`
+  path Earthwormzim's brother uses, for consistency between their two
+  setups — even though Ryan's plain filesystem scan already gets the same
+  `AlbumArtist` benefit for free (confirmed: `LibraryScanner.cs` already
+  reads `tag.FirstAlbumArtist` directly). Real iTunes turned out to be
+  unusable for this though — it was leaking 100+ GB of RAM on Ryan's
+  machine trying to import a library of well under 100 songs (likely an
+  iCloud Music Library / Apple Music catalog-matching bug, unrelated to
+  library size). Uninstalled.
+- Built `tools/ItunesXmlGenerator` instead — a small standalone console
+  tool (own `.csproj`, references TagLibSharp directly) that generates a
+  real iTunes-Library-XML-format file straight from a folder of MP3s,
+  reading the same tags the app's scanner already reads. No real iTunes
+  involved at all. Usage: `dotnet run -- <music-folder> [output-xml-path]`.
+  Persistent IDs are a stable hash of each file's path (real iTunes uses
+  random ones) so re-running the generator updates existing rows on
+  re-import instead of duplicating them.
+- **Found and fixed a real, serious bug in `ItunesXmlImporter.cs` itself**
+  while testing the generator's output against it — not a generator
+  problem. The root dict's key-scanning loop used
+  `reader.ReadToFollowing("key")` to walk sibling keys, but that method
+  searches the *entire remaining document* for the next `<key>` element
+  (not just the current dict level) and always advances past the current
+  node even when it already matches. Once nested dicts are involved (the
+  "Tracks" value is one), this silently desyncs — confirmed by
+  reproduction with a debug-logged root-key trace, not just theorized: it
+  could skip the "Tracks" key entirely and start walking the numeric
+  per-track keys as if they were root-level siblings, corrupting the
+  import in a way that depended on the exact number of metadata keys
+  iTunes happened to write before "Tracks", not a change in behavior
+  Ryan's file specifically triggered. Fixed by replacing that loop with
+  the same manual node-walking pattern the (already-correct) per-track
+  reading loop just below it already uses — verified robust afterward
+  against multiple synthetic files with 0, 1, and 4 metadata keys ahead of
+  "Tracks", plus Ryan's real 133-track library, all importing correctly
+  and idempotently (re-importing doesn't duplicate rows). This is a fix to
+  shared code Earthwormzim's brother also depends on — his own prior
+  285k-track import may have had some fields silently misattributed by
+  this bug even though the row count looked like a clean success; worth
+  him knowing about, not just Ryan.
+- Also suppressed EF Core's `PendingModelChangesWarning` on `LibraryDbContext`
+  (`Program.cs`) — discovered while first bringing up a test instance
+  after the previous merge: EF's strict model/snapshot parity check
+  believed the merged model had drift even though every migration in the
+  chain applies cleanly and produces the correct schema (confirmed: the
+  "fix" it proposes is a redundant `CreateTable` for `PlaybackState`, a
+  table that already exists everywhere). Suppressed per EF's own
+  documented guidance rather than accepting that migration, which would
+  have crashed on any database (dev or production) where `PlaybackState`
+  already exists. The exact snapshot-vs-model discrepancy causing the
+  false positive is still unidentified — flagged as a TODO in the code
+  rather than silently hidden.
+
+---
+
 ## 2026-08-22 — Ryan (2)
 
 - Merged in Earthwormzim's changes (iTunes XML import, section search,

@@ -21,6 +21,9 @@ dist/
 ## Local test music (not for source control)
 /Music/
 
+## Generated iTunes-XML output (per-machine, regenerate as needed)
+tools/ItunesXmlGenerator/output/
+
 ## Editor / OS
 .vs/
 .idea/

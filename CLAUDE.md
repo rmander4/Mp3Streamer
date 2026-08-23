@@ -97,6 +97,16 @@ real album, and from a phone over the LAN):
 - `Program.cs` — wires everything up; also serves `wwwroot/` (the built
   frontend) via `UseDefaultFiles`/`UseStaticFiles` for single-port deploys
 
+### `tools/ItunesXmlGenerator` — standalone console tool, own `.csproj`
+
+Generates a real iTunes-Library-XML-format file directly from a folder of
+MP3s (reading tags via TagLibSharp, same as the main scanner) — no actual
+iTunes involved. Built for Ryan so he could use the same
+`ItunesXmlImporter.cs` import path as his brother without fighting real
+iTunes (which was leaking 100+ GB of RAM on his machine for a library
+under 100 songs — see DEVLOG.md, 2026-08-23). Usage:
+`dotnet run -- <music-folder> [output-xml-path]`.
+
 ### Frontend — `client/mp3streamer-web` (React + TypeScript + Vite)
 
 - `api/client.ts`, `api/types.ts` — typed fetch wrappers for every endpoint
@@ -215,6 +225,23 @@ Worth knowing before you re-discover these the hard way:
   `audio.ended` — the exact ordering of when the `ended` flag itself
   becomes `true` relative to the `pause` event firing isn't consistent
   enough across browsers to rely on.
+- **`XmlReader.ReadToFollowing(name)` searches the entire remaining
+  document, not just sibling nodes at the current level, and always
+  advances past the current node even if it already matches.** Hit this
+  in `ItunesXmlImporter.cs`'s root-dict key-scanning loop: once a nested
+  `<dict>` is involved (the "Tracks" value), this silently desyncs — it
+  could skip the "Tracks" key entirely and start walking the numeric
+  per-track keys as if they were root-level siblings, with the exact
+  failure depending on how many metadata keys happened to precede
+  "Tracks" rather than failing consistently. Confirmed by reproduction
+  (a debug root-key trace), not just theorized. Fixed by replacing it
+  with manual node-walking (check `NodeType`/`Name` directly, `ReadAsync()`
+  to advance) — the same safe pattern the per-track reading loop just
+  below it already used, which never had this problem. If a future
+  `XmlReader`-based parser needs to iterate a dict's own key/value
+  siblings, don't reach for `ReadToFollowing` — it's for finding a
+  specific descendant anywhere ahead in the document, not for walking a
+  known, bounded set of siblings.
 - **No authentication in v1** — deliberate, since it's LAN-only. Don't wire
   up anything internet-facing without building auth first (see below).
 - **A published exe's `ContentRootPath` defaults to the current directory,

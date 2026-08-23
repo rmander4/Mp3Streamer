@@ -1,7 +1,7 @@
 import type { Album, Facet, PagedResult, PlaybackState, PlayHistoryEntry, PlaylistDetail, PlaylistSummary, Track } from './types';
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status} ${res.statusText} (${url})`);
   }
@@ -28,7 +28,7 @@ export interface TrackQuery {
   pageSize?: number;
 }
 
-export function fetchTracks(query: TrackQuery = {}): Promise<PagedResult<Track>> {
+export function fetchTracks(query: TrackQuery = {}, signal?: AbortSignal): Promise<PagedResult<Track>> {
   const params = new URLSearchParams();
   if (query.search) params.set('search', query.search);
   if (query.artist) params.set('artist', query.artist);
@@ -36,7 +36,7 @@ export function fetchTracks(query: TrackQuery = {}): Promise<PagedResult<Track>>
   if (query.genre) params.set('genre', query.genre);
   params.set('page', String(query.page ?? 1));
   params.set('pageSize', String(query.pageSize ?? 100));
-  return getJson(`/api/tracks?${params.toString()}`);
+  return getJson(`/api/tracks?${params.toString()}`, signal);
 }
 
 export function fetchArtists(): Promise<Facet[]> {

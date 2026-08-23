@@ -34,12 +34,31 @@ public sealed class ItunesXmlImporter(
         using var reader = XmlReader.Create(progressStream, settings);
         await MoveToElementAsync(reader, "dict", ct);
         await reader.ReadAsync();
-        while (reader.ReadToFollowing("key"))
+        // Walk the root dict's own key/value siblings manually rather than
+        // via ReadToFollowing("key") — that searches the *entire remaining
+        // document* for the next <key> element, not just siblings at this
+        // level, and always advances past the current node even if it
+        // already matches. Once the "Tracks" value (a nested <dict>) is
+        // involved, that combination silently desyncs: it can skip the
+        // "Tracks" key itself and start walking into the numeric per-track
+        // keys as if they were root-level siblings, corrupting the import
+        // in a way that depends on the exact number of preceding root keys
+        // rather than failing consistently. Confirmed by reproduction, not
+        // just theorized. Mirrors the loop shape already used just below
+        // for the per-track dict, which never had this problem.
+        while (reader.NodeType != XmlNodeType.EndElement || reader.Name != "dict")
         {
             ct.ThrowIfCancellationRequested();
+            await reader.MoveToContentAsync();
+            if (reader.NodeType == XmlNodeType.EndElement && reader.Name == "dict")
+                break;
+            if (reader.NodeType != XmlNodeType.Element || reader.Name != "key")
+            {
+                await reader.ReadAsync();
+                continue;
+            }
+
             var key = await reader.ReadElementContentAsStringAsync();
-            if (key == "Tracks")
-                logger.LogInformation("Found iTunes Tracks dictionary");
             if (key != "Tracks")
             {
                 await reader.MoveToContentAsync();
@@ -47,6 +66,7 @@ public sealed class ItunesXmlImporter(
                 continue;
             }
 
+            logger.LogInformation("Found iTunes Tracks dictionary");
             await reader.MoveToContentAsync();
             if (reader.NodeType != XmlNodeType.Element || reader.Name != "dict")
                 throw new InvalidDataException("The iTunes XML Tracks value is not a dictionary.");

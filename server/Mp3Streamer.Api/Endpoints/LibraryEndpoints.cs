@@ -109,11 +109,24 @@ public static class LibraryEndpoints
                 .ThenBy(a => a.Album));
         });
 
-        app.MapGet("/api/tracks/{id:int}/stream", async (int id, LibraryDbContext db) =>
+        app.MapGet("/api/tracks/{id:int}/stream", async (int id, LibraryDbContext db, HttpContext context) =>
         {
             var track = await db.Tracks.FindAsync(id);
             if (track is null || !File.Exists(track.FilePath))
                 return Results.NotFound();
+
+            // Without this, the response had no Cache-Control at all (just
+            // Last-Modified), which lets browsers heuristically cache full
+            // audio byte ranges to disk indefinitely — independent of, and
+            // outliving, the app's own single-track Blob buffering
+            // (bufferTrack.ts). That let several previously-played tracks
+            // keep working offline well after their in-memory Blob had
+            // already been revoked on track change, not just the one
+            // actually buffered — not a bug in the buffering cleanup
+            // itself (verified: NowPlayingBar.tsx already revokes the
+            // previous Blob on every track change), but the browser's own
+            // cache filling the same role behind the scenes.
+            context.Response.Headers.CacheControl = "no-store";
 
             return Results.File(track.FilePath, "audio/mpeg", enableRangeProcessing: true);
         });

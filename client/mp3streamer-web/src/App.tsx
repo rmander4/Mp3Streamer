@@ -82,17 +82,37 @@ function App() {
     const showTrackList = view === 'all' || drillDown !== null;
     if (!showTrackList) return;
 
+    // Cancels the previous in-flight search whenever a new one starts —
+    // without this, a slow search (large libraries especially: the
+    // %term% pattern can't use an index, so it's a full table scan) can
+    // resolve *after* a more recent one, repeatedly overwriting fresh
+    // results with stale ones and flickering the loading state on/off as
+    // each request independently finishes. Ryan's small library resolves
+    // fast enough that the race window is basically never hit; on his
+    // brother's ~285k-track library it reproduced every time (2026-08-24).
+    const controller = new AbortController();
+
     setLoading(true);
     setError(null);
-    fetchTracks({
-      search: search || undefined,
-      artist: drillDown?.kind === 'artist' ? drillDown.value : undefined,
-      album: drillDown?.kind === 'album' ? drillDown.value : undefined,
-      genre: drillDown?.kind === 'genre' ? drillDown.value : undefined,
-    })
+    fetchTracks(
+      {
+        search: search || undefined,
+        artist: drillDown?.kind === 'artist' ? drillDown.value : undefined,
+        album: drillDown?.kind === 'album' ? drillDown.value : undefined,
+        genre: drillDown?.kind === 'genre' ? drillDown.value : undefined,
+      },
+      controller.signal,
+    )
       .then((result) => setTracks(result.items))
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (e?.name === 'AbortError') return;
+        setError(String(e));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [view, drillDown, search]);
 
   const { playQueue, currentTrack, setCurrentTrackRating, setCurrentTrackFields } = usePlayer();
