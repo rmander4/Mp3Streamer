@@ -9,12 +9,22 @@ import { bufferTrack } from './bufferTrack';
 // A touch device (any orientation/width) or a narrow desktop window counts as "mobile" here.
 const MOBILE_QUERY = '(pointer: coarse), (max-width: 700px)';
 
-// How close to the end of the pre-buffered portion (in seconds) to trigger
-// the handoff to live network streaming for tracks longer than the buffer
-// cap — early enough that the swap's own brief loading gap doesn't cause an
-// audible stall, and generous enough to absorb bufferTrack's byte-to-seconds
-// estimate being a little optimistic (see bufferedSeconds in bufferTrack.ts).
+// How close to the end of the pre-buffered portion (in seconds) the actual
+// audible handoff to live network streaming happens, for tracks longer than
+// the buffer cap.
 const HANDOFF_LEAD_SECONDS = 5;
+
+// How much earlier than that to silently start warming up the live stream
+// in the background (see startPreload) — needs a real head start before
+// HANDOFF_LEAD_SECONDS so the shadow deck has time to load, seek, and settle
+// into sync before it's ever actually heard.
+const PRELOAD_LEAD_SECONDS = 20;
+
+// How often to re-check the shadow deck's position against the audible
+// deck's during that silent overlap window, snapping it back in sync if it
+// drifts — cheap to do since the shadow deck is muted the whole time.
+const SYNC_CHECK_INTERVAL_MS = 500;
+const SYNC_DRIFT_THRESHOLD_SECONDS = 0.2;
 
 // How often to checkpoint the current position to the server while playing,
 // as a backstop for the cross-device resume feature — covers the case where
@@ -35,7 +45,19 @@ export function NowPlayingBar() {
     next,
     previous,
   } = usePlayer();
-  const audioRef = useRef<HTMLAudioElement>(null);
+  // Two <audio> elements, not one — a live "listen to this" deck and a
+  // hidden "shadow" deck used only to silently pre-warm the live network
+  // stream ahead of the actual handoff point (see startPreload/
+  // performHandoff below). Which one is currently audible flips at
+  // handoff; audioIsPrimaryRef tracks that, and getActiveAudio/
+  // getShadowAudio read through it rather than any code touching
+  // primaryRef/secondaryRef directly.
+  const primaryRef = useRef<HTMLAudioElement>(null);
+  const secondaryRef = useRef<HTMLAudioElement>(null);
+  const audioIsPrimaryRef = useRef(true);
+  const getActiveAudio = () => (audioIsPrimaryRef.current ? primaryRef.current : secondaryRef.current);
+  const getShadowAudio = () => (audioIsPrimaryRef.current ? secondaryRef.current : primaryRef.current);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(() => {
@@ -49,7 +71,32 @@ export function NowPlayingBar() {
   const abortRef = useRef<AbortController | null>(null);
   const isPartialRef = useRef(false);
   const bufferedSecondsRef = useRef(0);
+  const preloadStartedRef = useRef(false);
   const handoffDoneRef = useRef(false);
+  const syncIntervalIdRef = useRef<number | null>(null);
+
+  const clearSyncInterval = () => {
+    if (syncIntervalIdRef.current != null) {
+      window.clearInterval(syncIntervalIdRef.current);
+      syncIntervalIdRef.current = null;
+    }
+  };
+
+  // Pausing/resuming needs to apply to both decks while the shadow one is
+  // mid-preload (silently playing in parallel) — otherwise a user pause
+  // during that window would only stop the audible deck, leaving the
+  // shadow deck running unmuted-audio-free but still consuming bandwidth,
+  // and a later handoff would resume playback the user had actually paused.
+  const pauseBothDecks = () => {
+    getActiveAudio()?.pause();
+    const shadow = getShadowAudio();
+    if (shadow && shadow.src) shadow.pause();
+  };
+  const playBothDecks = () => {
+    getActiveAudio()?.play().catch(() => {});
+    const shadow = getShadowAudio();
+    if (shadow && shadow.src) shadow.play().catch(() => {});
+  };
 
   // Selecting a track (including re-selecting the current one) pre-buffers
   // it (the whole file, or the first few minutes for a long track — see
@@ -63,14 +110,39 @@ export function NowPlayingBar() {
   // via a real bug: repeatedly clicking the same track from History wasn't
   // recording new history entries, since this effect never re-ran).
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume;
+    const active = getActiveAudio();
+    if (active) active.volume = volume;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [volume]);
 
   useEffect(() => {
     setCurrentTime(0);
     isPartialRef.current = false;
     bufferedSecondsRef.current = 0;
+    preloadStartedRef.current = false;
     handoffDoneRef.current = false;
+    audioIsPrimaryRef.current = true;
+    clearSyncInterval();
+
+    // A shadow deck left over from the previous track's handoff (or an
+    // in-flight preload that never got used) shouldn't carry into this
+    // one — always start a fresh track on the primary deck with the
+    // secondary blank. Primary itself also needs unmuting here: if the
+    // *previous* track ended up handed off to the secondary deck, primary
+    // is the one left muted from that handoff, and these two DOM elements
+    // are reused across tracks (only src/etc. change) — without this, a
+    // new track loaded onto a still-muted primary would silently play
+    // with no audio at all (confirmed via reproduction: skipped to a new
+    // track right after a handoff, primary came back muted: true).
+    const primary = primaryRef.current;
+    if (primary) primary.muted = false;
+    const secondary = secondaryRef.current;
+    if (secondary) {
+      secondary.pause();
+      secondary.removeAttribute('src');
+      secondary.load();
+      secondary.muted = true;
+    }
 
     abortRef.current?.abort();
     if (blobUrlRef.current) {
@@ -107,7 +179,7 @@ export function NowPlayingBar() {
         blobUrlRef.current = blobUrl;
         isPartialRef.current = isPartial;
         bufferedSecondsRef.current = bufferedSeconds;
-        const audio = audioRef.current;
+        const audio = primaryRef.current;
         if (!audio) return;
         audio.volume = volume;
         audio.src = blobUrl;
@@ -115,10 +187,12 @@ export function NowPlayingBar() {
         // Resuming from the cross-device "Continue playing?" prompt — seek
         // to the saved position instead of starting from 0. Past what's
         // actually buffered needs the same live-stream handoff a manual
-        // seek there would trigger (see swapToLiveStream/handleSeek below).
+        // seek there would trigger (see performHandoff/handleSeek below).
+        // No shadow deck to hand off to yet this early, so this always
+        // takes the cold-swap path inside performHandoff.
         if (resumeSeconds != null) {
           if (isPartial && resumeSeconds > bufferedSeconds - HANDOFF_LEAD_SECONDS) {
-            swapToLiveStream(resumeSeconds);
+            performHandoff(resumeSeconds);
           } else {
             audio.currentTime = resumeSeconds;
           }
@@ -132,7 +206,7 @@ export function NowPlayingBar() {
       .catch((err) => {
         if (err?.name === 'AbortError') return;
         console.error('Failed to pre-buffer track, falling back to direct streaming', err);
-        const audio = audioRef.current;
+        const audio = primaryRef.current;
         if (!audio) return;
         audio.volume = volume;
         audio.src = streamUrl(currentTrack.id);
@@ -159,7 +233,9 @@ export function NowPlayingBar() {
     return () => {
       abortRef.current?.abort();
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      clearSyncInterval();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Cross-device resume: checkpoint the position periodically while
@@ -170,7 +246,7 @@ export function NowPlayingBar() {
     if (!isPlaying || !currentTrack) return;
     const trackId = currentTrack.id;
     const interval = window.setInterval(() => {
-      const audio = audioRef.current;
+      const audio = getActiveAudio();
       if (!audio) return;
       savePlaybackState(trackId, audio.currentTime).catch((err) => {
         console.error('Failed to save playback position', err);
@@ -183,33 +259,115 @@ export function NowPlayingBar() {
     return null;
   }
 
-  // Switches the <audio> element from the pre-buffered blob to live network
-  // streaming, resuming at `resumeAt` — used both when the buffered cushion
-  // naturally runs out (see handleTimeUpdate) and if the user manually
-  // seeks past the buffered portion of a long track.
-  const swapToLiveStream = (resumeAt: number) => {
-    const audio = audioRef.current;
-    if (!audio || handoffDoneRef.current) return;
+  // Silently starts warming up the shadow deck with the live stream, well
+  // ahead of the actual handoff — loads it, seeks it to match the audible
+  // deck's current position, and starts it muted so it plays forward in
+  // parallel. performHandoff (below) can then just swap which deck is
+  // audible instead of doing a cold src-swap-and-seek in the moment, which
+  // is what made the transition audible in the first place (a real network
+  // round-trip with nothing playing, landing on an estimated — not exact —
+  // seek position for a VBR file).
+  const startPreload = () => {
+    if (preloadStartedRef.current || handoffDoneRef.current) return;
+    const shadow = getShadowAudio();
+    const active = getActiveAudio();
+    if (!shadow || !active) return;
+    preloadStartedRef.current = true;
+
+    shadow.muted = true;
+    shadow.volume = 0;
+    shadow.src = streamUrl(currentTrack.id);
+    const onLoaded = () => {
+      shadow.currentTime = active.currentTime;
+      shadow.play().catch(() => {});
+      shadow.removeEventListener('loadedmetadata', onLoaded);
+
+      clearSyncInterval();
+      syncIntervalIdRef.current = window.setInterval(() => {
+        if (handoffDoneRef.current) {
+          clearSyncInterval();
+          return;
+        }
+        const a = getActiveAudio();
+        if (!a) return;
+        if (Math.abs(shadow.currentTime - a.currentTime) > SYNC_DRIFT_THRESHOLD_SECONDS) {
+          shadow.currentTime = a.currentTime;
+        }
+      }, SYNC_CHECK_INTERVAL_MS);
+    };
+    shadow.addEventListener('loadedmetadata', onLoaded);
+  };
+
+  // The actual handoff. If the shadow deck has been silently running in
+  // parallel long enough to be ready (the common case — see startPreload),
+  // this is just an instant mute swap: no network wait, no fresh seek, so
+  // nothing for the ear to catch. Falls back to the old cold src-swap path
+  // (audible, but functional) if the shadow deck never got the chance to
+  // warm up in time — e.g. handoff triggered unusually early (a manual seek
+  // past the buffered portion) or a slow connection.
+  const performHandoff = (resumeAt: number) => {
+    if (handoffDoneRef.current) return;
+    const shadow = getShadowAudio();
+    const active = getActiveAudio();
+    if (!shadow || !active) return;
+
     handoffDoneRef.current = true;
+    clearSyncInterval();
+
+    if (shadow.src && shadow.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && !shadow.paused) {
+      shadow.muted = false;
+      shadow.volume = volume;
+      active.pause();
+      active.muted = true;
+      // Fully retire the old deck, not just pause it — revoking its blob
+      // URL invalidates the underlying data but leaves the <audio>'s own
+      // src *attribute* as a non-empty string, which would otherwise make
+      // playBothDecks/pauseBothDecks's "is the shadow mid-preload?" check
+      // (shadow.src truthy) mistake this retired deck for one, and
+      // incorrectly resume it on the next play (confirmed via
+      // reproduction: both decks audibly playing at once after a
+      // pause/resume following a completed handoff).
+      active.removeAttribute('src');
+      active.load();
+      audioIsPrimaryRef.current = !audioIsPrimaryRef.current;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+      return;
+    }
+
+    // The shadow deck not being ready doesn't mean it's blank — it can be
+    // mid-preload (started via handleTimeUpdate's proactive check) when a
+    // *different* trigger (handleEnded/handleStalled reacting to the blob
+    // genuinely running out early) fires this cold path first. Stop it
+    // rather than leaving an orphaned network stream running in the
+    // background indefinitely, unmuted-never, until the next track change.
+    if (shadow.src) {
+      shadow.pause();
+      shadow.removeAttribute('src');
+      shadow.load();
+    }
+
     const oldBlobUrl = blobUrlRef.current;
     blobUrlRef.current = null;
-    audio.src = streamUrl(currentTrack.id);
+    active.src = streamUrl(currentTrack.id);
     const onLoaded = () => {
-      audio.currentTime = resumeAt;
-      audio.play().catch(() => {});
-      audio.removeEventListener('loadedmetadata', onLoaded);
+      active.currentTime = resumeAt;
+      active.play().catch(() => {});
+      active.removeEventListener('loadedmetadata', onLoaded);
       if (oldBlobUrl) URL.revokeObjectURL(oldBlobUrl);
     };
-    audio.addEventListener('loadedmetadata', onLoaded);
+    active.addEventListener('loadedmetadata', onLoaded);
   };
 
   const togglePlayback = () => {
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (!audio) return;
     if (audio.paused) {
-      audio.play().catch(() => {});
+      playBothDecks();
     } else {
-      audio.pause();
+      pauseBothDecks();
     }
   };
 
@@ -218,10 +376,10 @@ export function NowPlayingBar() {
   // track ending — a `pause` event fires right before `ended`, but there's
   // nothing meaningful to resume once a track has actually finished (that
   // case clears the saved position entirely instead — see handleEnded).
-  const handlePause = () => {
+  const handlePause = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (e.currentTarget !== getActiveAudio()) return;
     setIsPlaying(false);
-    const audio = audioRef.current;
-    if (!audio) return;
+    const audio = e.currentTarget;
     const nearEnd = audio.duration > 0 && audio.duration - audio.currentTime < 1;
     if (nearEnd) return;
     savePlaybackState(currentTrack.id, audio.currentTime).catch((err) => {
@@ -229,7 +387,27 @@ export function NowPlayingBar() {
     });
   };
 
-  const handleEnded = () => {
+  // A truncated blob can genuinely run out of decodable audio a bit before
+  // bufferTrack's byte-to-seconds estimate predicted — VBR bitrate dipping
+  // below the track's average anywhere before the estimated cutoff means
+  // the actual audio in those bytes falls short of BUFFER_CAP_SECONDS. The
+  // <audio> element can't tell that apart from a real end of playback (it's
+  // a complete, static Blob as far as it knows) and fires a normal `ended`
+  // either way. handleTimeUpdate/handleStalled are meant to catch this
+  // proactively, but neither is guaranteed to — confirmed via reproduction
+  // (a real `ended` firing on a 16-minute track at 1:40 in, which advanced
+  // straight to the next track with nothing in between). This is the
+  // actual safety net: still on the partial blob, short of the track's
+  // real (ID3-tag) duration by more than a couple seconds means the audio
+  // element ran out of buffered data early, not that the track finished —
+  // hand off to live streaming and keep playing instead of skipping ahead.
+  const handleEnded = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (e.currentTarget !== getActiveAudio()) return;
+    const audio = e.currentTarget;
+    if (isPartialRef.current && !handoffDoneRef.current && currentTrack.durationSeconds - audio.currentTime > 2) {
+      performHandoff(audio.currentTime);
+      return;
+    }
     clearPlaybackState().catch((err) => {
       console.error('Failed to clear playback position', err);
     });
@@ -237,11 +415,15 @@ export function NowPlayingBar() {
   };
 
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (e.currentTarget !== getActiveAudio()) return;
     const audio = e.currentTarget;
     setCurrentTime(audio.currentTime);
 
+    if (isPartialRef.current && !preloadStartedRef.current && audio.currentTime >= bufferedSecondsRef.current - PRELOAD_LEAD_SECONDS) {
+      startPreload();
+    }
     if (isPartialRef.current && !handoffDoneRef.current && audio.currentTime >= bufferedSecondsRef.current - HANDOFF_LEAD_SECONDS) {
-      swapToLiveStream(audio.currentTime);
+      performHandoff(audio.currentTime);
     }
   };
 
@@ -256,23 +438,27 @@ export function NowPlayingBar() {
   // outside that window, the proactive check in handleTimeUpdate is what's
   // supposed to catch it, so ignore the event instead of reacting to noise.
   const handleStalled = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (e.currentTarget !== getActiveAudio()) return;
     const audio = e.currentTarget;
     const nearExpectedCutoff = audio.currentTime >= bufferedSecondsRef.current - 20;
     if (isPartialRef.current && !handoffDoneRef.current && nearExpectedCutoff) {
-      swapToLiveStream(audio.currentTime);
+      performHandoff(audio.currentTime);
     }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (!audio) return;
     const value = Number(e.target.value);
 
     // Seeking past what's actually been buffered (only possible for a long
     // track's partial buffer) needs the live-stream handoff immediately,
-    // rather than trying to seek within data that was never downloaded.
+    // rather than trying to seek within data that was never downloaded —
+    // the shadow deck won't be synced to an arbitrary jump like this, so
+    // performHandoff will fall back to its cold-swap path here, same as
+    // before this rework.
     if (isPartialRef.current && !handoffDoneRef.current && value > bufferedSecondsRef.current - HANDOFF_LEAD_SECONDS) {
-      swapToLiveStream(value);
+      performHandoff(value);
     } else {
       audio.currentTime = value;
     }
@@ -282,7 +468,8 @@ export function NowPlayingBar() {
   const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = Number(e.target.value);
     setVolume(value);
-    if (audioRef.current) audioRef.current.volume = value;
+    const audio = getActiveAudio();
+    if (audio) audio.volume = value;
     localStorage.setItem('mp3streamer.volume', String(value));
   };
 
@@ -302,8 +489,21 @@ export function NowPlayingBar() {
   return (
     <>
       <div className="now-playing-bar" onClick={openFullScreenOnMobile}>
+        {/* Two elements, not one — see primaryRef/secondaryRef above. Both
+            get the same handlers; each handler checks e.currentTarget
+            against getActiveAudio() to ignore events from whichever one is
+            currently just the silent shadow deck. */}
         <audio
-          ref={audioRef}
+          ref={primaryRef}
+          onEnded={handleEnded}
+          onPlay={() => setIsPlaying(true)}
+          onPause={handlePause}
+          onTimeUpdate={handleTimeUpdate}
+          onStalled={handleStalled}
+          onWaiting={handleStalled}
+        />
+        <audio
+          ref={secondaryRef}
           onEnded={handleEnded}
           onPlay={() => setIsPlaying(true)}
           onPause={handlePause}

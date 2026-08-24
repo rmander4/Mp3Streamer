@@ -141,7 +141,10 @@ under 100 songs — see DEVLOG.md, 2026-08-23). Usage:
   playback starts (whole file if ≤5 min, else just the first 5 min), so a
   temporary connection drop doesn't interrupt playback
 - `player/NowPlayingBar.tsx` — the Mini Player; tapping it on a touch device
-  (`pointer: coarse`) or narrow viewport opens `FullScreenPlayer`
+  (`pointer: coarse`) or narrow viewport opens `FullScreenPlayer`. Drives
+  playback through two `<audio>` elements (`primaryRef`/`secondaryRef`),
+  not one — see the gapless-handoff gotcha below before touching the
+  buffered→stream handoff logic
 - `player/FullScreenPlayer.tsx` — the Now Playing Screen; CSS reflows it to
   a side-by-side layout in landscape. Dismissed by dragging the artwork
   (Pointer Events) down in portrait / right in landscape past a threshold —
@@ -348,6 +351,61 @@ Worth knowing before you re-discover these the hard way:
   **Refresh Library** button (Settings) as a user-facing fallback for
   whenever it still happens — don't remove that button on the assumption
   the watcher is now fully reliable, it isn't guaranteed to be.
+- **`<audio>` can't tell "ran out of buffered data early" apart from "the
+  track actually ended."** For a partially-buffered long track (see
+  `bufferTrack.ts`), the Blob's byte-to-seconds estimate is only an
+  average-bitrate approximation — a VBR file's real audio can run out a
+  little before that estimate predicts, and since a Blob is a complete,
+  finite resource as far as the `<audio>` element is concerned, it fires
+  a perfectly normal `ended` when that happens. `handleEnded` in
+  `NowPlayingBar.tsx` used to treat every `ended` as "track over, play
+  next" unconditionally — real bug, reported live by Ryan ("the song
+  doesn't finish... begins playing the next song"), reproduced directly
+  (forced `ended` on a 16-minute track at 1:40 in — skipped immediately)
+  before fixing. Fix: `handleEnded` now checks whether we're still on the
+  partial blob and meaningfully short of the track's real (ID3-tag)
+  duration — if so, it hands off to live streaming instead of advancing.
+  If a future change touches this path, keep that check; don't let
+  `handleEnded` go back to trusting `ended` unconditionally.
+- **A DOM `<audio>` element cannot gaplessly switch which resource it's
+  playing — reassigning `.src` always causes a hard stop/reload, even for
+  a same-content, deliberately-timed handoff.** Hit this building the
+  buffered→live-stream handoff: swapping `.src` *at* the moment playback
+  needed to continue caused a real, audible gap (a network round-trip
+  with nothing playing) plus a small content misalignment (the seek
+  target for a VBR file over a plain range-request endpoint is an
+  estimate, not frame-accurate) — Ryan described it as sounding like "CD
+  skipping." There's no single-element fix for this; the standard
+  technique (same one this project now uses) is two `<audio>` elements:
+  a silent "shadow" deck preloads and seeks to match the audible deck's
+  position well ahead of the real handoff, plays forward muted in
+  parallel with periodic drift correction, and the actual handoff becomes
+  a mute/pause toggle between two already-synced elements — no `.src`
+  touched in the moment, so nothing for the ear to catch. See
+  `primaryRef`/`secondaryRef`/`getActiveAudio`/`getShadowAudio` in
+  `NowPlayingBar.tsx`. Three real bugs turned up reproducing this by
+  driving `<audio>.currentTime` and dispatching synthetic events to force
+  preload/handoff at exact points, then inspecting `src`/`muted`/`paused`
+  on both elements — worth the same treatment if this logic changes
+  again, not just eyeballing whether audio "sounds okay":
+  - The cold-fallback path (used when the shadow deck isn't ready yet)
+    only reset the *active* element — if a separate preload was already
+    mid-flight on the shadow deck when a different trigger (e.g. a real
+    early `ended`) forced the cold path, that shadow deck kept streaming
+    forever in the background, unmuted-never, until the next track change.
+  - Revoking a Blob URL invalidates the data but does **not** clear the
+    `<audio>` element's own `src` *attribute* — the retired deck's `.src`
+    stayed a non-empty string after handoff, which made
+    `playBothDecks`/`pauseBothDecks`'s "is the shadow mid-preload?" check
+    (`shadow.src` truthy) mistake it for one, and a pause/resume right
+    after a handoff resumed *both* decks audibly at once.
+  - The two `<audio>` elements are reused across track changes (only
+    `src`/`muted`/etc. change, not the elements themselves) — a track
+    that ends in a handoff leaves whichever deck was "active" unmuted and
+    the retired one muted. Without explicitly unmuting the primary deck
+    at the start of every new track, a track loaded right after a prior
+    track's handoff would start on a still-muted element and play with
+    no audio at all. Confirmed via reproduction, not assumption.
 
 ## Done since the original plan
 
@@ -366,7 +424,8 @@ Worth knowing before you re-discover these the hard way:
 - ✅ Resilient track buffering — see `player/bufferTrack.ts`; pre-buffers a
   track into memory before playback (whole file if ≤5 min, else the first 5
   min) so a temporary connection drop doesn't interrupt playback, with a
-  handoff to live streaming for the remainder of longer tracks.
+  handoff to live streaming for the remainder of longer tracks. The
+  handoff itself is gapless — see the dual-`<audio>`-element gotcha below.
 - ✅ Track downloads — a Download column/icon on desktop
   (`GET /api/tracks/{id}/download`); on mobile (where that column is
   hidden) it's the "Download" item in the long-press menu — see below. Text

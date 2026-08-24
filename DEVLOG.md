@@ -14,6 +14,61 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (10)
+
+- **Fixed a real bug reported live**: tracks over 5 minutes would sometimes
+  cut off partway through and jump straight to the next track — Ryan
+  noticed it happen twice in a row and asked whether it was buffering-
+  related. It was. Root cause: `bufferTrack.ts`'s byte-to-seconds estimate
+  for how much audio a partially-buffered long track actually contains is
+  just an average-bitrate approximation — for VBR files, the real audio
+  can run out a bit before that estimate, and the `<audio>` element can't
+  tell that apart from the track genuinely finishing (it's a complete,
+  static Blob as far as it knows), so it fires a normal `ended` — which
+  `handleEnded` was treating unconditionally as "track over, play next."
+  Reproduced directly (forced `ended` on a 16-minute track at 1:40 in —
+  immediately skipped to the next track) before fixing, then reproduced
+  the identical scenario again after: still on the partial blob and short
+  of the track's real (ID3-tag) duration by more than a couple seconds
+  now hands off to live streaming instead of advancing.
+- **Reworked the buffered→stream handoff to be gapless**, per separate
+  feedback once the above fix was live: Ryan could clearly hear the
+  transition itself — "sounds like CD skipping." Root cause: the old
+  handoff did a cold `audio.src` reassignment *at* the handoff moment
+  (a real network round-trip with nothing playing) and seeked to an
+  *estimated* byte position for a VBR file (imprecise — no frame-accurate
+  seek index on the plain range-request stream endpoint), so there was
+  both an audible gap and a small content misalignment right where you'd
+  most notice it. Fix: a second, hidden "shadow" `<audio>` element now
+  silently preloads the live stream ~20 seconds before the real handoff,
+  seeks to match the audible deck's position, and plays forward muted in
+  parallel (with a periodic drift-correction check, since the SEEK itself
+  is still an estimate — the point is it has ~15 seconds to settle before
+  anyone can hear it). The actual handoff is then just a mute/pause swap
+  between two already-synced decks — no network wait, no fresh seek, in
+  the common case. Falls back to the old cold-swap path if the shadow
+  deck never got the chance to warm up in time (e.g. a manual seek past
+  the buffered portion).
+  - Three real bugs found and fixed via direct reproduction while testing
+    this (driving `<audio>.currentTime` + dispatching synthetic events to
+    force preload/handoff at precise points, then inspecting both
+    elements' `src`/`muted`/`paused` state — not just theorizing):
+    orphaned shadow stream left running forever if the cold-fallback path
+    fired while a separate preload was mid-flight; both decks audibly
+    playing at once after a pause/resume right after a handoff (revoking
+    a blob URL doesn't clear the `<audio>` element's own `src`
+    *attribute*, so the retired deck still read as "mid-preload" to the
+    play/pause-both-decks logic); and the retired deck's `muted` state
+    silently carrying over to the *next* track, since both `<audio>`
+    elements are reused across track changes rather than recreated —
+    confirmed this one would have played a fresh track completely
+    silently after any track that had gone through a handoff.
+  - Can't literally verify "inaudible" from here — that's Ryan's own ears,
+    same as the first fix in this entry. What's verified is the
+    mechanism: the shadow deck genuinely finishes loading/seeking/syncing
+    before the swap in the common case, and the swap itself touches no
+    `src`/network at all when that's true.
+
 ## 2026-08-24 — Ryan (9)
 
 - Split the single-track ID3 editor's "Apply Changes" into two buttons:
