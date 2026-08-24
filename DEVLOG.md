@@ -14,6 +14,37 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (8)
+
+- Added Previous/Next track paging (`←`/`→`) to the single-track ID3
+  editor (`EditTagsDialog`) — pages through the sibling tracks on the
+  same album without closing/reopening the dialog, showing a "3 / 12"
+  position between the two buttons. On open, the dialog fetches the full
+  album's tracklist once (`fetchTracks({ album, artist })`, already
+  ordered by track number from the backend) and keeps it fixed for that
+  editing session — editing the Album text field mid-session doesn't
+  change what Left/Right page through, it's scoped to whatever album the
+  dialog was originally opened for. All per-track editing state (form
+  fields, any picked/selected artwork, error message) resets whenever the
+  displayed track changes, whether that's the initial open or a
+  Left/Right page.
+- Per Ryan: the nav buttons are **always shown, not hidden**, when
+  there's nothing to page to (no album on the track, or no sibling
+  tracks) — just grayed out via `disabled`, same as the existing Albums
+  pagination convention, rather than the controls disappearing depending
+  on the track. Verified both real edge cases: a track with only itself
+  on its "album" (both arrows disabled, "1 / 1"), and paging end-to-end
+  through a real 8-track album (Metallica's *Master of Puppets*) —
+  correct position label at every step, `←` disabled only at track 1,
+  `→` disabled only at track 8, form fields genuinely updating to match
+  each track paged to (not just the position counter).
+- Note for later: **"Apply Changes" still closes the dialog**, same as
+  before this feature — paging to a different track and then applying
+  saves and closes rather than staying open to keep browsing. Flagged to
+  Ryan as something to revisit if the paging workflow makes more sense
+  with Apply staying open instead; not changed yet since it wasn't part
+  of what was actually asked for.
+
 ## 2026-08-24 — Ryan (7)
 
 - Increased the Artists tab's per-artist album-art thumbnail cap from 4 to

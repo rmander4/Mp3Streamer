@@ -119,7 +119,9 @@ under 100 songs — see DEVLOG.md, 2026-08-23). Usage:
   `FacetList`, `SearchBar` (includes a mic button for voice search via the
   Web Speech API — see Key decisions below), `PlaylistPanel`, `SettingsPanel`,
   `TrackContextMenu` (generic right-click menu — first item is "Edit ID3
-  Tag(s)", desktop-only), `EditTagsDialog` (single-track ID3 editor),
+  Tag(s)", desktop-only), `EditTagsDialog` (single-track ID3 editor —
+  includes Previous/Next paging through the rest of the track's album
+  without closing the dialog),
   `EditTagsBulkDialog` (multi-track variant — only Artist/Album/Genre/Year,
   since Title/Track #/Rating are inherently per-track), `HistoryPanel`
   (today's play history, read-only), `FullscreenToggle` (the browser
@@ -569,6 +571,15 @@ Worth knowing before you re-discover these the hard way:
   `FacetList.tsx`) rather than as a normal absolutely-positioned child —
   see the tooltip-portal gotcha below for why that was necessary, not
   just a style choice.
+- ✅ Previous/Next track paging in the single-track ID3 editor
+  (`EditTagsDialog`) — pages through the sibling tracks on the same
+  album (fetched once on open, ordered by track number) without closing
+  the dialog; all per-track editing state resets on every page. Nav
+  buttons are always visible, grayed out via `disabled` (not hidden)
+  when there's nothing to page to — no album on the track, or no
+  siblings. Note: Apply Changes still closes the dialog same as before,
+  so paging + Apply doesn't chain into a "keep applying down the album"
+  workflow yet.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

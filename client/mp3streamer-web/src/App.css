@@ -110,6 +110,25 @@
   margin-bottom: 12px;
 }
 
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tags-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tags-nav-position {
+  font-size: 12px;
+  color: var(--text);
+  min-width: 3.5ch;
+  text-align: center;
+}
+
 .settings-header h2 {
   margin: 0;
 }
