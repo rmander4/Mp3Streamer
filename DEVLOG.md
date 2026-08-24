@@ -14,6 +14,47 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (9)
+
+- Split the single-track ID3 editor's "Apply Changes" into two buttons:
+  **Apply** (saves, dialog stays open) and **Apply and Close** (saves,
+  then closes) — the whole point of the previous entry's Previous/Next
+  paging was editing one track after another without the dialog closing,
+  and a single always-closing Apply button defeated that. Ryan: "Apply
+  will apply the changes, but leave the editor open." "Apply" re-saves
+  the current track, pushes the update up to the outer track list
+  (`onSaved`, unchanged), keeps the album-tracklist cache in sync so
+  paging back to an already-edited track shows the saved state (not
+  stale pre-edit data), and re-baselines the form to the just-saved
+  values so the dirty check (and both Apply buttons) correctly go back
+  to disabled until another real change is made — confirmed via a live
+  round-trip test (edited Genre, Apply, confirmed still open + fields
+  reset + buttons disabled + change actually persisted server-side, then
+  edited again and used Apply and Close to both verify that path and
+  restore the original value in one move). Closing responsibility moved
+  from the parent (`TrackList`'s `onSaved` no longer calls
+  `setEditingTrack(null)`) into the dialog itself, which now calls
+  `onClose()` only for "Apply and Close".
+- Small design pass on the album art field (both single-track and bulk
+  ID3 editors), per Ryan's mockup: enlarged the art preview (56px → 84px)
+  and put "Browse…" and "Search iTunes" into a same-size stacked column
+  next to it, instead of trailing off in a wide row. Two real sizing bugs
+  found and fixed while matching the mockup exactly (Ryan: "the art box
+  is slightly smaller than the height of the two buttons... I was kind
+  of hoping they'd be the same"):
+  - `.settings-option`'s base `flex: 1` (meant for the horizontal button
+    rows it's normally used in) silently overrode an explicit `height`
+    once reused inside this new *column*-direction flex container —
+    `flex: 1`'s `flex-basis: 0%` wins over `height` in flex sizing.
+    Fixed the same way `.tags-actions .settings-option` already had to
+    (`flex: none` override) in a different context.
+  - `.tags-art-preview` had no `box-sizing: border-box`, so its 1px
+    border added 2px on top of the declared 84px, throwing off the
+    match against the button stack's own height by exactly that much.
+  - Verified precisely via direct `getBoundingClientRect()` measurement
+    (not just eyeballing a screenshot) that the art and the two-button
+    stack now come out to the exact same 84px, bottoms flush.
+
 ## 2026-08-24 — Ryan (8)
 
 - Added Previous/Next track paging (`←`/`→`) to the single-track ID3

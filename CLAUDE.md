@@ -239,6 +239,22 @@ Worth knowing before you re-discover these the hard way:
   in a clipped or scrolling ancestor" (same technique Radix/Popper/
   Floating UI use) — reach for a portal directly next time this shape of
   bug shows up, rather than re-trying overflow/clip-path variations.
+- **`.settings-option`'s base `flex: 1` silently overrides an explicit
+  `height` once reused inside a *column*-direction flex container.**
+  Hit this sizing the ID3 editors' stacked Browse…/Search iTunes buttons
+  to match the enlarged album art: `flex: 1` expands to `flex-basis: 0%`,
+  which wins over a plain `height` in the flex sizing algorithm, so the
+  two buttons rendered noticeably shorter than the height I'd actually
+  set — confirmed via `getBoundingClientRect()`, not just eyeballing.
+  `.settings-option` was designed for the *horizontal* button rows it's
+  normally used in (`.tags-actions`, `.settings-options`), where
+  `flex: 1` is exactly what makes buttons share a row's width evenly —
+  it just doesn't carry over cleanly to a vertical stack. Fixed with a
+  `flex: none` override on the column-context selector, same pattern
+  `.tags-actions .settings-option` already used for a different reason.
+  If `.settings-option` gets reused inside another column-direction flex
+  container in the future, override `flex` there too rather than
+  assuming an explicit `height`/`width` alone will stick.
 - **`currentTrack?.id` alone is not a reliable "the user (re)selected a
   track" signal.** It doesn't change when re-selecting the track that's
   already playing, which silently broke both buffering-restart and
@@ -577,9 +593,16 @@ Worth knowing before you re-discover these the hard way:
   the dialog; all per-track editing state resets on every page. Nav
   buttons are always visible, grayed out via `disabled` (not hidden)
   when there's nothing to page to — no album on the track, or no
-  siblings. Note: Apply Changes still closes the dialog same as before,
-  so paging + Apply doesn't chain into a "keep applying down the album"
-  workflow yet.
+  siblings. Paired with a split **Apply** / **Apply and Close** (the
+  former saves and stays open — the actual point of paging, so you can
+  edit down an album one track at a time; the latter is the old
+  always-closes behavior). Closing is the dialog's own decision now, not
+  the parent's `onSaved` callback.
+- ✅ Enlarged album art preview (56px → 84px) and same-size stacked
+  Browse…/Search iTunes buttons in both ID3 editors, matching a mockup
+  Ryan provided. See the `.tags-art-buttons` gotcha below if reusing
+  `.settings-option` inside a *column*-direction flex container again —
+  its base `flex: 1` silently wins over an explicit `height` there.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

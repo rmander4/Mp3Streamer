@@ -256,13 +256,14 @@
 
 .tags-art-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
 .tags-art-preview {
-  width: 56px;
-  height: 56px;
+  width: 84px;
+  height: 84px;
+  box-sizing: border-box;
   border-radius: 4px;
   object-fit: cover;
   background: var(--code-bg);
@@ -286,8 +287,37 @@
   display: none;
 }
 
+/* Browse… and Search iTunes — same width, stacked, sitting next to the
+   (now-larger) art preview rather than trailing off in a wide row. Heights
+   are pinned (not left to padding/line-height) so the two-button stack
+   totals exactly .tags-art-preview's own height: 38 + 8 (gap) + 38 = 84. */
+.tags-art-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tags-art-buttons > .settings-option,
+.tags-art-buttons .itunes-art-search > .settings-option {
+  /* Overrides the base .settings-option's "flex: 1" (flex-basis: 0%),
+     which otherwise wins over an explicit height in this column-direction
+     flex container and left the button stack a good bit shorter than the
+     art despite the height rule below — same fix already used for
+     .tags-actions .settings-option in a different context. */
+  flex: none;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
 .itunes-art-search {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .itunes-art-empty {

@@ -263,10 +263,11 @@ export function TrackList({
         <EditTagsDialog
           track={editingTrack}
           onClose={() => setEditingTrack(null)}
-          onSaved={(updated) => {
-            onTagsUpdated(updated);
-            setEditingTrack(null);
-          }}
+          // Closing (or not) is the dialog's own call now — "Apply" saves
+          // and keeps paging, "Apply and Close" saves and calls onClose
+          // itself. This callback just needs to keep the outer track list
+          // in sync, not decide whether the dialog stays open.
+          onSaved={(updated) => onTagsUpdated(updated)}
         />
       ) : null}
 

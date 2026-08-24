@@ -128,7 +128,11 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
     return () => URL.revokeObjectURL(url);
   }, [artworkFile]);
 
-  const handleApply = async () => {
+  // "Apply" saves and keeps paging through the album; "Apply and Close"
+  // saves and closes — the whole point of adding Previous/Next paging was
+  // to edit one track after another without the dialog closing on every
+  // save, so a plain "Apply Changes" that always closed would defeat it.
+  const handleApply = async (closeAfter: boolean) => {
     if (!canApply) return;
     setSaving(true);
     setError(null);
@@ -147,6 +151,27 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
         updated = await applyArtworkFromUrl(currentTrack.id, itunesArtworkUrl);
       }
       onSaved(updated);
+      // Keep the album tracklist's own copy in sync too — otherwise paging
+      // back to a track already saved earlier in this session would show
+      // its stale pre-edit data instead of what was just applied.
+      setAlbumTracks((prev) => (prev ? prev.map((t) => (t.id === updated.id ? updated : t)) : prev));
+
+      if (closeAfter) {
+        onClose();
+        return;
+      }
+
+      // Staying open: re-baseline the form to the freshly-saved values
+      // (clears the dirty state) instead of relying on the
+      // currentTrack.id-keyed reset effect, since the id itself hasn't
+      // changed here.
+      setCurrentTrack(updated);
+      const next = toFormState(updated);
+      setOriginal(next);
+      setForm(next);
+      setArtworkFile(null);
+      setItunesArtworkUrl(null);
+      setSaving(false);
     } catch {
       setError('Failed to save changes — please try again.');
       setSaving(false);
@@ -202,23 +227,25 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
                   (e.target as HTMLImageElement).style.visibility = 'hidden';
                 }}
               />
-              <button type="button" className="settings-option" onClick={() => fileInputRef.current?.click()}>
-                Browse…
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="tags-art-input"
-                onChange={handleArtworkPicked}
-              />
+              <div className="tags-art-buttons">
+                <button type="button" className="settings-option" onClick={() => fileInputRef.current?.click()}>
+                  Browse…
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="tags-art-input"
+                  onChange={handleArtworkPicked}
+                />
+                <ItunesArtworkSearch
+                  artist={form.artist}
+                  album={form.album}
+                  selectedUrl={itunesArtworkUrl}
+                  onSelect={handleItunesArtworkSelected}
+                />
+              </div>
             </div>
-            <ItunesArtworkSearch
-              artist={form.artist}
-              album={form.album}
-              selectedUrl={itunesArtworkUrl}
-              onSelect={handleItunesArtworkSelected}
-            />
           </label>
           <label className="tags-field">
             <span>Title</span>
@@ -252,8 +279,11 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
           <button className="settings-option" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button className="settings-option tags-apply" onClick={handleApply} disabled={!canApply}>
-            {saving ? 'Applying…' : 'Apply Changes'}
+          <button className="settings-option" onClick={() => handleApply(false)} disabled={!canApply}>
+            {saving ? 'Applying…' : 'Apply'}
+          </button>
+          <button className="settings-option tags-apply" onClick={() => handleApply(true)} disabled={!canApply}>
+            {saving ? 'Applying…' : 'Apply and Close'}
           </button>
         </div>
       </div>

@@ -166,23 +166,25 @@ export function EditTagsBulkDialog({ tracks, onClose, onSaved }: EditTagsBulkDia
               ) : (
                 <span className="tags-art-preview tags-art-placeholder">multiple values</span>
               )}
-              <button type="button" className="settings-option" onClick={() => fileInputRef.current?.click()}>
-                Browse…
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="tags-art-input"
-                onChange={handleArtworkPicked}
-              />
+              <div className="tags-art-buttons">
+                <button type="button" className="settings-option" onClick={() => fileInputRef.current?.click()}>
+                  Browse…
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="tags-art-input"
+                  onChange={handleArtworkPicked}
+                />
+                <ItunesArtworkSearch
+                  artist={artist.touched ? artist.text : shared.artist.value}
+                  album={album.touched ? album.text : shared.album.value}
+                  selectedUrl={itunesArtworkUrl}
+                  onSelect={handleItunesArtworkSelected}
+                />
+              </div>
             </div>
-            <ItunesArtworkSearch
-              artist={artist.touched ? artist.text : shared.artist.value}
-              album={album.touched ? album.text : shared.album.value}
-              selectedUrl={itunesArtworkUrl}
-              onSelect={handleItunesArtworkSelected}
-            />
           </label>
           <label className="tags-field">
             <span>Artist</span>
