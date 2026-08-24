@@ -62,3 +62,9 @@ export interface PlaybackState {
   track: Track;
   positionSeconds: number;
 }
+
+export interface ArtworkSearchResult {
+  artworkUrl: string;
+  artistName: string;
+  collectionName: string;
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Track } from '../api/types';
-import { artworkUrl, updateTrackArtwork, updateTrackTags } from '../api/client';
+import { applyArtworkFromUrl, artworkUrl, updateTrackArtwork, updateTrackTags } from '../api/client';
+import { ItunesArtworkSearch } from './ItunesArtworkSearch';
 
 interface EditTagsDialogProps {
   track: Track;
@@ -37,11 +38,12 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
   const [form, setForm] = useState(original);
   const [artworkFile, setArtworkFile] = useState<File | null>(null);
   const [artworkPreviewUrl, setArtworkPreviewUrl] = useState<string | null>(null);
+  const [itunesArtworkUrl, setItunesArtworkUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const dirty = isDirty(form, original) || artworkFile !== null;
+  const dirty = isDirty(form, original) || artworkFile !== null || itunesArtworkUrl !== null;
   const canApply = dirty && form.title.trim().length > 0 && !saving;
 
   const setField = (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,7 +53,13 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
   const handleArtworkPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setItunesArtworkUrl(null);
     setArtworkFile(file);
+  };
+
+  const handleItunesArtworkSelected = (url: string) => {
+    setArtworkFile(null);
+    setItunesArtworkUrl(url);
   };
 
   // Local preview of the newly-picked file, before it's actually uploaded.
@@ -80,6 +88,8 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
       });
       if (artworkFile) {
         updated = await updateTrackArtwork(track.id, artworkFile);
+      } else if (itunesArtworkUrl) {
+        updated = await applyArtworkFromUrl(track.id, itunesArtworkUrl);
       }
       onSaved(updated);
     } catch {
@@ -104,7 +114,7 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
             <div className="tags-art-row">
               <img
                 className="tags-art-preview"
-                src={artworkPreviewUrl ?? artworkUrl(track.id)}
+                src={artworkPreviewUrl ?? itunesArtworkUrl ?? artworkUrl(track.id)}
                 alt=""
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.visibility = 'hidden';
@@ -121,6 +131,12 @@ export function EditTagsDialog({ track, onClose, onSaved }: EditTagsDialogProps)
                 onChange={handleArtworkPicked}
               />
             </div>
+            <ItunesArtworkSearch
+              artist={form.artist}
+              album={form.album}
+              selectedUrl={itunesArtworkUrl}
+              onSelect={handleItunesArtworkSelected}
+            />
           </label>
           <label className="tags-field">
             <span>Title</span>

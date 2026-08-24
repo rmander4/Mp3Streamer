@@ -267,6 +267,46 @@
   display: none;
 }
 
+.itunes-art-search {
+  margin-top: 8px;
+}
+
+.itunes-art-empty {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text);
+  margin: 8px 0 0;
+}
+
+.itunes-art-results {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  overflow-x: auto;
+}
+
+.itunes-art-result {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.itunes-art-result img {
+  width: 48px;
+  height: 48px;
+  border-radius: 2px;
+  object-fit: cover;
+  display: block;
+}
+
+.itunes-art-result.active {
+  border-color: var(--accent);
+}
+
 .tags-bulk-hint {
   font-size: 13px;
   color: var(--text);

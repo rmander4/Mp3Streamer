@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mp3Streamer.Api.Data;
@@ -290,17 +292,7 @@ public static class LibraryEndpoints
 
             await using var ms = new MemoryStream();
             await file.CopyToAsync(ms);
-            var picture = new TagLib.Picture(new TagLib.ByteVector(ms.ToArray()))
-            {
-                Type = TagLib.PictureType.FrontCover,
-                MimeType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType,
-            };
-
-            using (var tagFile = TagLib.File.Create(track.FilePath))
-            {
-                tagFile.Tag.Pictures = [picture];
-                tagFile.Save();
-            }
+            SaveArtwork(track.FilePath, ms.ToArray(), file.ContentType);
 
             track.HasEmbeddedArt = true;
             await db.SaveChangesAsync();
@@ -309,6 +301,85 @@ public static class LibraryEndpoints
                 track.Id, track.Title ?? "Untitled", track.Artist, track.Album, track.Genre,
                 track.TrackNumber, track.Year, track.DurationSeconds, track.HasEmbeddedArt, track.Rating, track.IsMissing));
         }).DisableAntiforgery();
+
+        // Free, keyless public catalog search — no official terms issue for
+        // personal, low-volume lookups like this. Returned artwork URLs
+        // point at Apple's own mzstatic.com CDN.
+        app.MapGet("/api/artwork/search", async (string? artist, string? album, IHttpClientFactory httpClientFactory) =>
+        {
+            if (string.IsNullOrWhiteSpace(album))
+                return Results.BadRequest("Album is required.");
+
+            var term = string.IsNullOrWhiteSpace(artist) ? album : $"{artist} {album}";
+            var searchUrl = $"https://itunes.apple.com/search?term={Uri.EscapeDataString(term)}&entity=album&limit=5";
+
+            ItunesSearchResponse? parsed;
+            try
+            {
+                var client = httpClientFactory.CreateClient();
+                parsed = await client.GetFromJsonAsync<ItunesSearchResponse>(searchUrl, ItunesJsonOptions);
+            }
+            catch
+            {
+                return Results.Problem("Failed to reach the iTunes search API.", statusCode: StatusCodes.Status502BadGateway);
+            }
+
+            var results = (parsed?.Results ?? [])
+                .Where(r => !string.IsNullOrWhiteSpace(r.ArtworkUrl100))
+                // iTunes only returns small (100x100) thumbnails — the same
+                // CDN path serves much larger art if you swap the size
+                // segment in the URL; this is the standard (if undocumented)
+                // trick every iTunes-artwork tool uses to get full-res art.
+                .Select(r => new ArtworkSearchResultDto(
+                    r.ArtworkUrl100!.Replace("100x100bb", "600x600bb"),
+                    r.ArtistName ?? "",
+                    r.CollectionName ?? ""))
+                .ToArray();
+
+            return Results.Ok(results);
+        });
+
+        // Downloads the given (Apple CDN only — see the host allowlist
+        // below) image URL server-side and writes it into the track's ID3
+        // art, same as the file-upload endpoint above.
+        app.MapPut("/api/tracks/{id:int}/artwork-from-url", async (int id, ApplyArtworkFromUrlRequest request, LibraryDbContext db, IHttpClientFactory httpClientFactory) =>
+        {
+            var track = await db.Tracks.FindAsync(id);
+            if (track is null || !File.Exists(track.FilePath))
+                return Results.NotFound();
+
+            if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps ||
+                !(uri.Host.EndsWith(".mzstatic.com", StringComparison.OrdinalIgnoreCase) ||
+                  uri.Host.EndsWith(".apple.com", StringComparison.OrdinalIgnoreCase)))
+            {
+                return Results.BadRequest("Artwork URL must be an https Apple CDN URL.");
+            }
+
+            byte[] bytes;
+            string? mimeType;
+            try
+            {
+                var client = httpClientFactory.CreateClient();
+                using var response = await client.GetAsync(uri);
+                response.EnsureSuccessStatusCode();
+                bytes = await response.Content.ReadAsByteArrayAsync();
+                mimeType = response.Content.Headers.ContentType?.MediaType;
+            }
+            catch
+            {
+                return Results.Problem("Failed to download artwork.", statusCode: StatusCodes.Status502BadGateway);
+            }
+
+            SaveArtwork(track.FilePath, bytes, mimeType);
+
+            track.HasEmbeddedArt = true;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new TrackDto(
+                track.Id, track.Title ?? "Untitled", track.Artist, track.Album, track.Genre,
+                track.TrackNumber, track.Year, track.DurationSeconds, track.HasEmbeddedArt, track.Rating, track.IsMissing));
+        });
 
         app.MapGet("/api/settings/remove-missing-tracks", async (LibraryDbContext db) =>
         {
@@ -343,4 +414,23 @@ public static class LibraryEndpoints
 
         return $"{name}.mp3";
     }
+
+    private static void SaveArtwork(string filePath, byte[] bytes, string? mimeType)
+    {
+        var picture = new TagLib.Picture(new TagLib.ByteVector(bytes))
+        {
+            Type = TagLib.PictureType.FrontCover,
+            MimeType = string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType,
+        };
+
+        using var tagFile = TagLib.File.Create(filePath);
+        tagFile.Tag.Pictures = [picture];
+        tagFile.Save();
+    }
+
+    private static readonly JsonSerializerOptions ItunesJsonOptions = new(JsonSerializerDefaults.Web);
+
+    private record ItunesSearchResponse(int ResultCount, List<ItunesSearchResult> Results);
+
+    private record ItunesSearchResult(string? ArtistName, string? CollectionName, string? ArtworkUrl100);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Track } from '../api/types';
-import { updateTrackArtwork, updateTracksBulkTags } from '../api/client';
+import { applyArtworkFromUrl, updateTrackArtwork, updateTracksBulkTags } from '../api/client';
+import { ItunesArtworkSearch } from './ItunesArtworkSearch';
 
 interface EditTagsBulkDialogProps {
   tracks: Track[];
@@ -44,18 +45,26 @@ export function EditTagsBulkDialog({ tracks, onClose, onSaved }: EditTagsBulkDia
   const [year, setYear] = useState<FieldState>({ text: shared.year.value, touched: false });
   const [artworkFile, setArtworkFile] = useState<File | null>(null);
   const [artworkPreviewUrl, setArtworkPreviewUrl] = useState<string | null>(null);
+  const [itunesArtworkUrl, setItunesArtworkUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [artworkProgress, setArtworkProgress] = useState<{ completed: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const anyTouched = artist.touched || album.touched || genre.touched || year.touched || artworkFile !== null;
+  const anyTouched =
+    artist.touched || album.touched || genre.touched || year.touched || artworkFile !== null || itunesArtworkUrl !== null;
   const canApply = anyTouched && !saving;
 
   const handleArtworkPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setItunesArtworkUrl(null);
     setArtworkFile(file);
+  };
+
+  const handleItunesArtworkSelected = (url: string) => {
+    setArtworkFile(null);
+    setItunesArtworkUrl(url);
   };
 
   useEffect(() => {
@@ -93,7 +102,7 @@ export function EditTagsBulkDialog({ tracks, onClose, onSaved }: EditTagsBulkDia
           year: year.touched ? (year.text.trim() ? Number(year.text) : null) : null,
         });
       }
-      if (artworkFile) {
+      if (artworkFile || itunesArtworkUrl) {
         // One request per track rather than a single bulk call — a
         // multi-MB image times a couple dozen tracks genuinely takes a
         // while (each one is a full file rewrite via TagLibSharp), and a
@@ -106,7 +115,9 @@ export function EditTagsBulkDialog({ tracks, onClose, onSaved }: EditTagsBulkDia
         let failures = 0;
         for (const track of tracks) {
           try {
-            const withArt = await updateTrackArtwork(track.id, artworkFile);
+            const withArt = artworkFile
+              ? await updateTrackArtwork(track.id, artworkFile)
+              : await applyArtworkFromUrl(track.id, itunesArtworkUrl!);
             byId.set(track.id, withArt);
           } catch {
             failures++;
@@ -150,8 +161,8 @@ export function EditTagsBulkDialog({ tracks, onClose, onSaved }: EditTagsBulkDia
           <label className="tags-field tags-art-field">
             <span>Album Art</span>
             <div className="tags-art-row">
-              {artworkPreviewUrl ? (
-                <img className="tags-art-preview" src={artworkPreviewUrl} alt="" />
+              {artworkPreviewUrl || itunesArtworkUrl ? (
+                <img className="tags-art-preview" src={artworkPreviewUrl ?? itunesArtworkUrl!} alt="" />
               ) : (
                 <span className="tags-art-preview tags-art-placeholder">multiple values</span>
               )}
@@ -166,6 +177,12 @@ export function EditTagsBulkDialog({ tracks, onClose, onSaved }: EditTagsBulkDia
                 onChange={handleArtworkPicked}
               />
             </div>
+            <ItunesArtworkSearch
+              artist={artist.touched ? artist.text : shared.artist.value}
+              album={album.touched ? album.text : shared.album.value}
+              selectedUrl={itunesArtworkUrl}
+              onSelect={handleItunesArtworkSelected}
+            />
           </label>
           <label className="tags-field">
             <span>Artist</span>

@@ -49,6 +49,7 @@ builder.Services.AddDbContext<LibraryDbContext>(options =>
 builder.Services.AddScoped<LibraryScanner>();
 builder.Services.AddScoped<ItunesXmlImporter>();
 builder.Services.AddHostedService<LibraryWatcherService>();
+builder.Services.AddHttpClient();
 
 builder.Services.AddCors(options =>
 {

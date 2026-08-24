@@ -1,4 +1,4 @@
-import type { Album, Facet, PagedResult, PlaybackState, PlayHistoryEntry, PlaylistDetail, PlaylistSummary, Track } from './types';
+import type { Album, ArtworkSearchResult, Facet, PagedResult, PlaybackState, PlayHistoryEntry, PlaylistDetail, PlaylistSummary, Track } from './types';
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { signal });
@@ -150,6 +150,24 @@ export async function updateTrackArtwork(trackId: number, file: File): Promise<T
   const form = new FormData();
   form.append('file', file);
   const res = await fetch(`/api/tracks/${trackId}/artwork`, { method: 'PUT', body: form });
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export function searchItunesArtwork(artist: string, album: string): Promise<ArtworkSearchResult[]> {
+  const params = new URLSearchParams({ album });
+  if (artist) params.set('artist', artist);
+  return getJson(`/api/artwork/search?${params.toString()}`);
+}
+
+export async function applyArtworkFromUrl(trackId: number, url: string): Promise<Track> {
+  const res = await fetch(`/api/tracks/${trackId}/artwork-from-url`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status} ${res.statusText}`);
   }

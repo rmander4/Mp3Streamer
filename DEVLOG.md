@@ -14,6 +14,38 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (6)
+
+- Added automatic album art lookup via the **iTunes Search API** (free,
+  keyless, no auth) — a "Search iTunes" button now sits next to "Browse…"
+  in both the single-track and bulk ID3 editors. Searches by whatever the
+  Artist/Album fields currently hold (bulk dialog uses the shared value
+  across the selection, or whatever's been typed if the field was
+  touched), shows up to 5 candidate covers as clickable thumbnails, and
+  selecting one flows through the exact same preview/apply path as
+  picking a local file — just backed by a remote URL instead of a `File`.
+  New shared `components/ItunesArtworkSearch.tsx`, used by both dialogs.
+- Backend: `GET /api/artwork/search?artist=&album=` proxies
+  `itunes.apple.com/search` server-side (registered `IHttpClientFactory`
+  in `Program.cs`) and bumps the thumbnail URL from iTunes' default
+  100x100 up to 600x600 — same undocumented CDN-path trick every
+  iTunes-artwork tool uses. `PUT /api/tracks/{id}/artwork-from-url`
+  downloads the chosen image server-side and writes it into the track's
+  ID3 art via the same `SaveArtwork` helper the existing file-upload
+  endpoint now shares. That endpoint validates the URL is `https` and
+  hosted on `*.mzstatic.com`/`*.apple.com` before fetching it — a
+  same-origin-only allowlist, not just trusting whatever URL a client
+  sends, to keep the server from being usable as an open fetch proxy.
+- Verified carefully given the earlier session's real album-art-corruption
+  incident (2026-08-24, entry 3): backed up a real track's embedded art
+  first, applied a real iTunes URL through the new endpoint, confirmed
+  the bytes actually changed, then restored the original bytes and
+  confirmed byte-for-byte equality with the backup before moving on.
+  Also verified the host allowlist rejects a non-Apple URL (400), and the
+  full UI flow (search → 5 thumbnail results → select → preview updates →
+  Apply enables) in-browser without ever clicking Apply against a real
+  track.
+
 ## 2026-08-24 — Ryan (5)
 
 - Moved the browser-fullscreen toggle out of the Settings (⋮) menu and

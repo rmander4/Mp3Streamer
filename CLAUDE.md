@@ -87,7 +87,11 @@ real album, and from a phone over the LAN):
   (attachment with a sanitized "Artist - Title.mp3" filename),
   `/api/tracks/{id}/artwork`, `/api/tracks/{id}/rating` and
   `/api/tracks/{id}/tags` (both write through to the file's actual ID3v2
-  tag via TagLibSharp, then mirror into the DB — not DB-only)
+  tag via TagLibSharp, then mirror into the DB — not DB-only),
+  `/api/artwork/search` (proxies the free iTunes Search API for album art
+  candidates) and `/api/tracks/{id}/artwork-from-url` (downloads a chosen
+  candidate server-side and writes it the same way the upload endpoint
+  does — see Key decisions below for the host-allowlist reasoning)
 - `Endpoints/PlaylistEndpoints.cs` — full CRUD + `/reorder` for playlists
 - `Endpoints/HistoryEndpoints.cs` — play history (today-only, self-pruning —
   see Key decisions below) and the `HistoryEnabled` app setting
@@ -120,7 +124,9 @@ under 100 songs — see DEVLOG.md, 2026-08-23). Usage:
   since Title/Track #/Rating are inherently per-track), `HistoryPanel`
   (today's play history, read-only), `FullscreenToggle` (the browser
   Fullscreen API toggle button, next to the ⋮ settings trigger — not the
-  Now Playing Screen, which is a different, same-app "full screen" concept)
+  Now Playing Screen, which is a different, same-app "full screen" concept),
+  `ItunesArtworkSearch` (the "Search iTunes" button + thumbnail-candidate
+  picker shared by both ID3 editors)
 - `history/HistoryContext.tsx` — the Track History on/off setting; fetched
   once from the server and shared (both `Sidebar`, to show/hide the History
   nav item, and every `SettingsPanel` instance need the same live value —
@@ -277,6 +283,14 @@ Worth knowing before you re-discover these the hard way:
   just the DB, so there's no "just don't commit it" undo).
 - **No authentication in v1** — deliberate, since it's LAN-only. Don't wire
   up anything internet-facing without building auth first (see below).
+- **`PUT /api/tracks/{id}/artwork-from-url` validates its URL against a
+  host allowlist (`*.mzstatic.com`/`*.apple.com`) before the server fetches
+  it.** Without that check, an endpoint that takes a client-supplied URL
+  and fetches it server-side is a textbook open-proxy/SSRF shape — LAN-only
+  and no-auth doesn't make that free, since any device already on the LAN
+  could otherwise make the server fetch arbitrary internal or external
+  URLs. Any future "fetch this URL server-side" endpoint should get the
+  same treatment.
 - **A published exe's `ContentRootPath` defaults to the current directory,
   not the exe's own folder** — bites you the moment it's launched from
   anywhere else (a different CWD, or a Windows Service, which always starts
@@ -512,6 +526,12 @@ Worth knowing before you re-discover these the hard way:
   YouTube's expand/collapse control — outward corner-bracket icon when not
   fullscreen, inward when in fullscreen. Appears both in the main sidebar
   header and the Now Playing Screen's header.
+- ✅ Automatic album art lookup via the free iTunes Search API — a "Search
+  iTunes" button in both ID3 editors, shows up to 5 candidate thumbnails,
+  selecting one applies it through `PUT /api/tracks/{id}/artwork-from-url`
+  (server downloads the image and writes it into ID3, same as a manual
+  upload). See `ItunesArtworkSearch.tsx` and the `/api/artwork/search`
+  endpoint.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

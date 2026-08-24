@@ -74,3 +74,7 @@ public record BulkUpdateTagsRequest(
 public record PlaybackStateDto(TrackDto Track, double PositionSeconds);
 
 public record SavePlaybackStateRequest(int TrackId, double PositionSeconds);
+
+public record ArtworkSearchResultDto(string ArtworkUrl, string ArtistName, string CollectionName);
+
+public record ApplyArtworkFromUrlRequest(string Url);
