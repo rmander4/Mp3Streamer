@@ -67,7 +67,10 @@ public static class LibraryEndpoints
                 .ToListAsync();
 
             // One representative track id per (Artist, Album) pair, for the
-            // frontend's small cascaded album-art stack next to each artist.
+            // frontend's small album-art stack next to each artist. Sent
+            // uncapped — the frontend shows up to 10 as a static row, or
+            // switches to a scrolling marquee beyond that, so it needs the
+            // full list either way rather than a server-side cap.
             var albumSamples = await db.Tracks
                 .Where(t => t.Artist != null && t.Album != null)
                 .GroupBy(t => new { t.Artist, t.Album })
@@ -78,7 +81,7 @@ public static class LibraryEndpoints
                 .GroupBy(a => a.Artist)
                 .ToDictionary(
                     g => g.Key,
-                    g => g.OrderBy(a => a.Album).Take(4).Select(a => new AlbumArtDto(a.SampleTrackId, a.Album)).ToArray());
+                    g => g.OrderBy(a => a.Album).Select(a => new AlbumArtDto(a.SampleTrackId, a.Album)).ToArray());
 
             var artists = trackCounts
                 .Select(a => new ArtistDto(a.Name, a.Count, albumArtByArtist.GetValueOrDefault(a.Name, [])))

@@ -14,6 +14,71 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (7)
+
+- Increased the Artists tab's per-artist album-art thumbnail cap from 4 to
+  10 (`/api/artists` no longer `Take()`s a fixed count server-side at all
+  — it sends every album, uncapped, and lets the frontend decide how to
+  show them).
+- Added an auto-scrolling **marquee** for artists with more than 10
+  albums, replacing what would otherwise be an ever-widening static row.
+  Scrolls left until the last thumbnail is fully in view, holds there 2
+  seconds, reverses back to the start, holds again, and repeats — not a
+  seamless one-way loop, a genuine bounce with real endpoints. Driven by
+  the Web Animations API (`MarqueeStack` in `FacetList.tsx`), not plain
+  CSS `@keyframes` — the per-artist hold duration means the animation's
+  keyframe *offsets* (not just values) depend on how many albums that
+  artist has, which static CSS custom properties can't express. Hovering
+  pauses it (`Animation.pause()`/`.play()`) so a click or the tooltip
+  isn't chasing a moving target.
+- Iterated through several real bugs found via Ryan's live testing before
+  landing on the final version — worth knowing for next time:
+  - The bounce initially stopped short of the true last thumbnail
+    ("Ride the Lightning... you never get to see the whole art").
+    Root cause: `.album-art-stack-item` has a 1px border with no
+    `box-sizing: border-box`, so its real rendered footprint is 24px, not
+    the 22px the distance math assumed — undercounted by 2px per
+    thumbnail, compounding across the whole track. Fixed by correcting
+    the `THUMB_SIZE` constant to 24, verified by freezing the track at
+    its computed end position and confirming the last thumbnail's edge
+    lands exactly flush (0px gap) with the window's edge.
+  - An edge-fade mask (meant to signal "more content" at each side, like
+    a continuous loop uses) doesn't make sense for a *bounce* — at the
+    true start/end of a bounded list there's nothing beyond the edge to
+    fade for, so the fade was clipping real content that should show in
+    full. Removed entirely once the bounce (not a loop) was settled on.
+  - **Real, confirmed bug**: hovering to pause the marquee also hid the
+    per-thumbnail tooltip (the album name popup) — reported by Ryan after
+    the pause feature made reading a tooltip possible for the first time.
+    Root cause, confirmed via direct DOM/hit-testing (not guesswork): the
+    tooltip is `position: absolute`, a DOM descendant of the marquee's
+    clipped window — and there is no CSS-only way for a descendant to
+    escape an ancestor's `overflow`/`clip-path` while staying in the
+    tree. (Tried `overflow-x: hidden; overflow-y: visible` — the spec
+    quirk where that pairing forces `overflow-y`'s *computed* value to
+    `auto` instead. Tried `clip-path: inset()` with a large negative
+    top/bottom offset, expecting it to extend the clip region — it
+    doesn't in practice, the browser clamps it flush to the box. Neither
+    worked.) Fixed properly via a React portal: each thumbnail
+    (`AlbumArtThumb`) now renders its tooltip into `document.body` via
+    `createPortal`, `position: fixed`, positioned from the thumbnail's
+    own `getBoundingClientRect()` computed on hover/focus — the standard
+    fix this exact class of "tooltip trapped in a clipped/scrollable
+    container" problem always uses (same technique Radix/Popper/Floating
+    UI use). This also happened to fix a second, pre-existing instance of
+    the same underlying issue: the very first artist row's tooltip could
+    collide with the sticky content-header above it.
+  - Verified conclusively, not just theorized: reproduced each bug via
+    direct DOM measurement (frozen animation positions, `elementsFromPoint`
+    stacks, A/B toggling one CSS property at a time) rather than relying
+    on visual screenshots, since the Browser pane wasn't compositing
+    frames for screenshots this session — flagged that limitation to Ryan
+    explicitly rather than claiming a visual check that didn't happen.
+    Also caught and corrected two of my own invalid tests along the way
+    (checking with `pointer-events: none` still in effect, which defeats
+    `elementFromPoint` regardless of whether the tooltip is actually
+    visible or not) rather than reporting a false conclusion from them.
+
 ## 2026-08-24 — Ryan (6)
 
 - Added automatic album art lookup via the **iTunes Search API** (free,

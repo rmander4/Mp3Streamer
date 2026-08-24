@@ -215,6 +215,28 @@ Worth knowing before you re-discover these the hard way:
   elsewhere if a "should be simple" flex/margin rule doesn't seem to apply
   the way its own declaration says it should — check for a more specific
   sibling-combinator rule matching a *hidden* neighbor first.
+- **A DOM descendant cannot escape an ancestor's `overflow`/`clip-path`
+  clipping while staying in the DOM tree — there's no CSS property that
+  opts a specific descendant out.** Hit this with the Artists-tab album
+  art marquee's hover tooltip (`position: absolute`, popping up above a
+  thumbnail): once the thumbnail sat inside a horizontally-clipped
+  scrolling window, the tooltip got silently clipped/hidden too, even
+  though visually it "should" float free above the clipped box. Two
+  plausible-looking CSS fixes were tried and both failed in practice:
+  `overflow-x: hidden; overflow-y: visible` looks like it clips one axis
+  only, but per spec that pairing forces `overflow-y`'s *computed* value
+  to `auto` instead, which still clips; `clip-path: inset()` with a large
+  *negative* top/bottom offset looks like it should expand the clip
+  region beyond the box, but the browser clamps it flush to the box
+  instead (confirmed via reproduction, not just spec-reading — a
+  same-point `elementFromPoint` A/B test with clip-path toggled on/off
+  showed the real difference). The actual fix: render the tooltip via a
+  React portal into `document.body` (`position: fixed`, coordinates from
+  `getBoundingClientRect()` on hover/focus) — see `AlbumArtThumb` in
+  `FacetList.tsx`. This is the standard fix for "tooltip/popover trapped
+  in a clipped or scrolling ancestor" (same technique Radix/Popper/
+  Floating UI use) — reach for a portal directly next time this shape of
+  bug shows up, rather than re-trying overflow/clip-path variations.
 - **`currentTrack?.id` alone is not a reliable "the user (re)selected a
   track" signal.** It doesn't change when re-selecting the track that's
   already playing, which silently broke both buffering-restart and
@@ -449,14 +471,19 @@ Worth knowing before you re-discover these the hard way:
   dropped events). Verified on a separate port against the real library
   before redeploying to the live service, per Ryan's standing "test
   before you deploy" preference.
-- ✅ Album-art stack (desktop Artists view) — each artist row shows up to 4
-  small (22x22px) album-art thumbnails, one per distinct album, cascaded
-  left-to-right only (no y-axis overlap), right-justified next to the
-  track count. `GET /api/artists` returns `AlbumArtTrackIds` per artist
-  (`ArtistDto`); rendered by `AlbumArtStack` inside `FacetList.tsx`.
-  Desktop-only, hidden under the same `max-width: 700px` layout breakpoint
-  as other desktop-only columns. Iterated through several rounds of
-  visual feedback with Ryan before landing on the final look.
+- ✅ Album-art stack (desktop Artists view) — each artist row shows up to
+  10 small (22x22px) album-art thumbnails, one per distinct album,
+  cascaded left-to-right only (no y-axis overlap), right-justified next
+  to the track count. Beyond 10, it switches to an auto-scrolling
+  bounce-style marquee instead of an ever-widening row — see the
+  `MarqueeStack`/Web-Animations-API and portaled-tooltip entries further
+  below for the full story, including the real bugs found iterating on
+  it. `GET /api/artists` returns every album per artist uncapped
+  (`ArtistDto`); rendered by `AlbumArtStack`/`MarqueeStack`/`AlbumArtThumb`
+  inside `FacetList.tsx`. Desktop-only, hidden under the same
+  `max-width: 700px` layout breakpoint as other desktop-only columns.
+  Iterated through several rounds of visual feedback with Ryan before
+  landing on the final look.
   When a track has no embedded art, the thumbnail falls back to a small
   music-note glyph in a placeholder box (same size/border as a real
   thumbnail) rather than an invisible gap — tracked via per-stack React
@@ -532,6 +559,16 @@ Worth knowing before you re-discover these the hard way:
   (server downloads the image and writes it into ID3, same as a manual
   upload). See `ItunesArtworkSearch.tsx` and the `/api/artwork/search`
   endpoint.
+- ✅ Bounce-style auto-scrolling marquee for artists with more than 10
+  albums (see the Album-art-stack entry above) — driven by the Web
+  Animations API rather than CSS `@keyframes`, since the per-artist hold
+  duration at each end makes the animation's keyframe *offsets* (not just
+  values) depend on that artist's own album count, which plain CSS custom
+  properties can't express. Each thumbnail's hover tooltip is rendered
+  via a React portal into `document.body` (`AlbumArtThumb` in
+  `FacetList.tsx`) rather than as a normal absolutely-positioned child —
+  see the tooltip-portal gotcha below for why that was necessary, not
+  just a style choice.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

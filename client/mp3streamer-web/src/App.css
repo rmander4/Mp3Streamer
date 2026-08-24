@@ -665,6 +665,42 @@
   margin-left: 10px;
 }
 
+/* Beyond MARQUEE_THRESHOLD albums, a fixed-width scrolling window replaces
+   the plain flex row. No edge mask/fade here — unlike an endless loop, a
+   bounce has real boundaries (the track's actual first/last thumbnail),
+   and at those endpoints the edge art should show in full rather than
+   fading out as if there were more content beyond it.
+   Plain `overflow: hidden` is fine here — the tooltip no longer lives
+   inside this box at all (see .album-art-tooltip's comment), so there's
+   nothing depending on this container's vertical clipping behavior. */
+.album-art-marquee {
+  width: 130px;
+  /* 22px art + the thumbnail's own 1px top/bottom border (see
+     .album-art-stack-item) — matching this exactly avoids a stray 2px
+     vertical overflow turning into an unwanted scrollbar. */
+  height: 24px;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.album-art-marquee + .facet-count {
+  margin-left: 10px;
+}
+
+/* The actual bounce (including the hold at each end) is driven by the Web
+   Animations API in FacetList.tsx, not a static CSS @keyframes — the hold
+   duration makes the keyframe offsets depend on this artist's own album
+   count, which plain CSS custom properties can't express (only a
+   keyframe's *value* can vary that way, not its percentage offset). Hover
+   pause/resume is likewise handled in JS (Animation.pause()/.play()) so it
+   can target that per-instance Animation object directly. */
+.album-art-marquee-track {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+}
+
 .album-art-item-wrap {
   position: relative;
   display: flex;
@@ -688,10 +724,18 @@
   border-color: var(--accent);
 }
 
+/* Rendered via a React portal into document.body (see AlbumArtThumb in
+   FacetList.tsx), not as a normal child of .album-art-item-wrap — a plain
+   `position: absolute` tooltip nested inside the marquee (or any scrolling
+   ancestor, e.g. .main-content's own overflow) gets clipped by that
+   ancestor's overflow/clip-path with no CSS-only way around it, since a
+   DOM descendant can't escape an ancestor's clip while staying in the
+   tree. `position: fixed` here + JS-computed viewport coordinates on
+   hover sidesteps that entirely — the standard fix this exact class of
+   "tooltip trapped in a clipped/scrollable container" problem always
+   uses. */
 .album-art-tooltip {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
+  position: fixed;
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -700,17 +744,8 @@
   color: var(--text-h);
   font-size: 12px;
   white-space: nowrap;
-  opacity: 0;
   pointer-events: none;
-  transform: translateY(4px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 2;
-}
-
-.album-art-item-wrap:hover .album-art-tooltip,
-.album-art-item-wrap:focus-visible .album-art-tooltip {
-  opacity: 1;
-  transform: translateY(0);
+  z-index: 2000;
 }
 
 .album-art-stack-fallback {
@@ -1380,16 +1415,19 @@
     display: none;
   }
 
-  .album-art-stack {
+  .album-art-stack,
+  .album-art-marquee {
     display: none;
   }
 
-  /* The stack element is hidden above, not removed from the DOM — without
-     this, the higher-specificity ".album-art-stack + .facet-count" rule
-     (a fixed 10px margin, meant to sit the count close to the art) still
-     wins over the plain ".facet-count" rule's "margin-left: auto", so the
-     count drifts based on name length instead of sitting flush right. */
-  .album-art-stack + .facet-count {
+  /* The stack/marquee element is hidden above, not removed from the DOM —
+     without this, the higher-specificity ".album-art-stack + .facet-count"
+     rule (a fixed 10px margin, meant to sit the count close to the art)
+     still wins over the plain ".facet-count" rule's "margin-left: auto",
+     so the count drifts based on name length instead of sitting flush
+     right. */
+  .album-art-stack + .facet-count,
+  .album-art-marquee + .facet-count {
     margin-left: auto;
   }
 
