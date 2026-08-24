@@ -14,6 +14,60 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-24 — Ryan (5)
+
+- Moved the browser-fullscreen toggle out of the Settings (⋮) menu and
+  into its own small icon button, placed directly to the left of the ⋮
+  trigger — both in the main sidebar header and the Now Playing Screen's
+  own header. Styled after YouTube's expand/collapse control: an outward-
+  pointing corner-bracket icon when not fullscreen, inward-pointing when
+  in fullscreen (Material Design's `fullscreen`/`fullscreen_exit` icon
+  paths). New `components/FullscreenToggle.tsx` holds all the logic
+  (feature detection via `document.documentElement.requestFullscreen`,
+  `fullscreenchange` listener, toggle handler) that previously lived
+  inline in `SettingsPanel.tsx` — that file no longer has a "Display"
+  section at all. Note: "fullscreen" here is the browser's actual
+  Fullscreen API, unrelated to (and confusingly similarly named as) the
+  "Now Playing Screen" (a.k.a. `FullScreenPlayer.tsx`), which is a
+  same-app full-viewport view, not OS-level fullscreen.
+
+## 2026-08-24 — Ryan (4)
+
+- Fixed mobile long-press on an album card in the Albums grid opening
+  Chrome/Android's native "save/copy image" menu instead of the app's own
+  custom context menu — the `<img>` inside `.album-card` now has
+  `pointer-events: none` (plus `-webkit-user-drag: none`) so a long-press
+  always hits the parent card button, the same technique `TrackList`
+  already used for row long-presses. `.album-card` itself also got
+  `-webkit-touch-callout: none`/`user-select: none` for the same reason.
+- Added a universal **Cancel** option to `TrackContextMenu` — previously,
+  once a right-click or long-press menu opened, there was no way to
+  dismiss it without picking a real action (tapping outside works on
+  desktop but isn't discoverable on a touch device that just long-pressed
+  something). Per Ryan: "I think we should add a 'cancel' or a timeout.
+  I'm leaning towards a third option for cancel." Applies everywhere this
+  shared component is used (track rows and album cards alike).
+- **Workflow change**: selecting an artist from the Artists tab now
+  navigates to the Albums tab filtered to just that artist's albums,
+  instead of going straight to a flat track list. `App.tsx` tracks this
+  via a new `albumsArtistFilter` state (separate from `drillDown`, which
+  still handles album/genre drill-down) with its own "← Back to artists"
+  breadcrumb; drilling into one of those filtered albums stacks a second
+  breadcrumb level ("← Back to {artist}") on top via the existing
+  `drillDown` breadcrumb. Verified the full round trip: Artists → filtered
+  Albums → track list → back → back.
+- Fixed: the "N matches" count next to a section search box (Artists/
+  Albums/Genres) was showing even with an empty search box (e.g. "5
+  matches" with nothing typed). Now only renders when
+  `sectionSearch.trim()` is non-empty.
+- All four changes above verified together in-browser on a test instance
+  (port 5289) before deploying — long-press/Cancel via simulated
+  `PointerEvent`s (a real touchscreen long-press can't be scripted, same
+  caveat as the right-click-menu testing limitation noted elsewhere in
+  this file/`CLAUDE.md`), the workflow change via full click-through, and
+  the match-count fix by typing/clearing a search box and checking the
+  DOM directly.
+
 ## 2026-08-24 — Ryan (3)
 
 - Added album art editing to both the single-track and bulk ID3 editors —

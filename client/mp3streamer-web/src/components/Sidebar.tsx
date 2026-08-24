@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SettingsPanel } from './SettingsPanel';
+import { FullscreenToggle } from './FullscreenToggle';
 import { useHistorySetting } from '../history/HistoryContext';
 
 export type ViewKey = 'all' | 'artists' | 'albums' | 'genres' | 'playlists' | 'history';
@@ -29,9 +30,12 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
     <nav className="sidebar">
       <div className="sidebar-header">
         <h1 className="sidebar-title">MP3 Streamer</h1>
-        <button className="settings-trigger" onClick={() => setSettingsOpen(true)} aria-label="Settings">
-          ⋮
-        </button>
+        <div className="sidebar-header-actions">
+          <FullscreenToggle />
+          <button className="settings-trigger" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+            ⋮
+          </button>
+        </div>
       </div>
       <ul>
         {visibleViews.map((v) => (

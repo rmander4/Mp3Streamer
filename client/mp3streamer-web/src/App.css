@@ -41,6 +41,12 @@
   margin: 0;
 }
 
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .settings-trigger {
   background: transparent;
   border: 1px solid var(--border);
@@ -54,6 +60,23 @@
 }
 
 .settings-trigger:hover {
+  background: var(--accent-bg);
+}
+
+.fullscreen-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.fullscreen-toggle:hover {
   background: var(--accent-bg);
 }
 
@@ -169,6 +192,16 @@
 
 .context-menu-item:hover {
   background: var(--accent-bg);
+}
+
+.context-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.context-menu-cancel {
+  color: var(--text);
 }
 
 .tags-panel {
@@ -667,6 +700,11 @@
   cursor: pointer;
   text-align: left;
   color: var(--text-h);
+  /* Same reasoning as .track-row — cards are long-press targets (our own
+     "Edit ID3 Tags" menu), not text/images to select or save. */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .album-card:hover {
@@ -680,6 +718,17 @@
   border-radius: 4px;
   background: var(--code-bg);
   margin-bottom: 8px;
+  -webkit-user-drag: none;
+  /* Chrome/Android shows its own "Share/Download/Copy image" long-press
+     menu specifically when the touch target is an <img> element — none
+     of the text-selection-prevention properties above stop that, since
+     it isn't a text-selection gesture. Removing the image from touch
+     hit-testing entirely (pointer-events: none) is what actually
+     prevents it; the long-press is still detected normally because it
+     falls through to this <button> underneath, which is what our own
+     onPointerDown/onPointerUp long-press handling is already attached
+     to. */
+  pointer-events: none;
 }
 
 .album-card-title {
@@ -902,7 +951,9 @@
 
 .fullscreen-header {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 6px;
   width: 100%;
   max-width: 340px;
 }

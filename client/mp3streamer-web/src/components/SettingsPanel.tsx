@@ -3,8 +3,6 @@ import { useTheme, type Theme } from '../theme/ThemeContext';
 import { useHistorySetting } from '../history/HistoryContext';
 import { getRemoveMissingTracks, importItunesXml, scanLibrary, setRemoveMissingTracks } from '../api/client';
 
-const FULLSCREEN_SUPPORTED = typeof document !== 'undefined' && !!document.documentElement.requestFullscreen;
-
 const THEME_OPTIONS: { key: Theme; label: string }[] = [
   { key: 'light', label: 'Light' },
   { key: 'dark', label: 'Dark' },
@@ -18,7 +16,6 @@ interface SettingsPanelProps {
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const { theme, setTheme } = useTheme();
   const { historyEnabled, setHistoryEnabled } = useHistorySetting();
-  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   // Nothing else needs this value reactively (unlike historyEnabled, which
   // gates the sidebar's History nav item across two SettingsPanel render
   // sites), so a local fetch here is enough — no shared context needed.
@@ -28,12 +25,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [itunesFile, setItunesFile] = useState<File | null>(null);
   const [importingItunes, setImportingItunes] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
-  }, []);
 
   useEffect(() => {
     getRemoveMissingTracks()
@@ -61,14 +52,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     } catch {
       setScanError('Failed to refresh library — please try again.');
       setScanning(false);
-    }
-  };
-
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else {
-      document.documentElement.requestFullscreen().catch(() => {});
     }
   };
 
@@ -199,15 +182,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </button>
           {importMessage ? <p className="tags-error">{importMessage}</p> : null}
         </div>
-
-        {FULLSCREEN_SUPPORTED ? (
-          <div className="settings-section">
-            <div className="settings-label">Display</div>
-            <button className="settings-option" onClick={toggleFullscreen}>
-              {isFullscreen ? 'Exit full screen' : 'Enter full screen'}
-            </button>
-          </div>
-        ) : null}
       </div>
     </div>
   );

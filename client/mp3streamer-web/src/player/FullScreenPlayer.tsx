@@ -5,6 +5,7 @@ import { formatDuration } from '../utils/format';
 import { StarRating } from './StarRating';
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon } from './icons';
 import { SettingsPanel } from '../components/SettingsPanel';
+import { FullscreenToggle } from '../components/FullscreenToggle';
 
 interface FullScreenPlayerProps {
   track: Track;
@@ -94,6 +95,7 @@ export function FullScreenPlayer({
   return (
     <div className="fullscreen-player">
       <div className="fullscreen-header">
+        <FullscreenToggle />
         <button className="settings-trigger" onClick={() => setSettingsOpen(true)} aria-label="Settings">
           ⋮
         </button>

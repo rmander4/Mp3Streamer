@@ -22,7 +22,7 @@ import { ResumePrompt } from './player/ResumePrompt';
 import './App.css';
 
 interface DrillDown {
-  kind: 'artist' | 'album' | 'genre';
+  kind: 'album' | 'genre';
   value: string;
 }
 
@@ -39,6 +39,11 @@ function App() {
   const [search, setSearch] = useState('');
   const [sectionSearch, setSectionSearch] = useState('');
   const [drillDown, setDrillDown] = useState<DrillDown | null>(null);
+  // Selecting an artist from the Artists tab jumps to Albums filtered to
+  // just that artist's albums, rather than straight to a track list — set
+  // alongside `view`, cleared whenever navigating away via the sidebar or
+  // via its own "Back to artists" breadcrumb.
+  const [albumsArtistFilter, setAlbumsArtistFilter] = useState<string | null>(null);
 
   const [tracks, setTracks] = useState<Track[]>([]);
   const [artists, setArtists] = useState<Facet[]>([]);
@@ -54,6 +59,7 @@ function App() {
     setView(next);
     localStorage.setItem(SAVED_VIEW_KEY, next);
     setDrillDown(null);
+    setAlbumsArtistFilter(null);
     setSearch('');
     setSectionSearch('');
     fetchPlaylists().then(setPlaylists);
@@ -97,7 +103,6 @@ function App() {
     fetchTracks(
       {
         search: search || undefined,
-        artist: drillDown?.kind === 'artist' ? drillDown.value : undefined,
         album: drillDown?.kind === 'album' ? drillDown.value : undefined,
         genre: drillDown?.kind === 'genre' ? drillDown.value : undefined,
       },
@@ -163,9 +168,9 @@ function App() {
     addTrackToPlaylist(playlistId, trackId).then(() => fetchPlaylists().then(setPlaylists));
   }, []);
 
-  const filteredAlbums = albums.filter((album) =>
-    `${album.album} ${album.artist ?? ''}`.toLowerCase().includes(sectionSearch.toLowerCase()),
-  );
+  const filteredAlbums = albums
+    .filter((album) => !albumsArtistFilter || album.artist === albumsArtistFilter)
+    .filter((album) => `${album.album} ${album.artist ?? ''}`.toLowerCase().includes(sectionSearch.toLowerCase()));
   const albumPageCount = albumPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredAlbums.length / albumPageSize));
   const visibleAlbums = albumPageSize === 0
     ? filteredAlbums
@@ -181,7 +186,10 @@ function App() {
       return (
         <FacetList
           facets={filteredArtists}
-          onSelect={(name) => setDrillDown({ kind: 'artist', value: name })}
+          onSelect={(name) => {
+            setAlbumsArtistFilter(name);
+            setView('albums');
+          }}
           onSelectAlbum={(album) => {
             setView('albums');
             setDrillDown({ kind: 'album', value: album });
@@ -252,21 +260,33 @@ function App() {
           <div className="content-header">
             {drillDown ? (
               <button className="back-link" onClick={() => setDrillDown(null)}>
-                &larr; Back to {view}
+                &larr; Back to {albumsArtistFilter ?? view}
+              </button>
+            ) : albumsArtistFilter ? (
+              <button
+                className="back-link"
+                onClick={() => {
+                  setAlbumsArtistFilter(null);
+                  setView('artists');
+                }}
+              >
+                &larr; Back to artists
               </button>
             ) : null}
             {view === 'all' || drillDown ? <SearchBar onSearch={setSearch} /> : null}
             {view !== 'all' && !drillDown && view !== 'playlists' && view !== 'history' ? (
               <div className="section-search-row">
                 <SearchBar onSearch={setSectionSearch} placeholder={`Search ${view}...`} />
-                <span className="search-match-count">
-                  {view === 'artists'
-                    ? artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
-                    : view === 'albums'
-                      ? filteredAlbums.length
-                      : genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase())).length}{' '}
-                  matches
-                </span>
+                {sectionSearch.trim() ? (
+                  <span className="search-match-count">
+                    {view === 'artists'
+                      ? artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
+                      : view === 'albums'
+                        ? filteredAlbums.length
+                        : genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase())).length}{' '}
+                    matches
+                  </span>
+                ) : null}
                 {view === 'albums' ? (
                   <>
                     <label className="album-page-size">

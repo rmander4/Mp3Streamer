@@ -118,7 +118,9 @@ under 100 songs — see DEVLOG.md, 2026-08-23). Usage:
   Tag(s)", desktop-only), `EditTagsDialog` (single-track ID3 editor),
   `EditTagsBulkDialog` (multi-track variant — only Artist/Album/Genre/Year,
   since Title/Track #/Rating are inherently per-track), `HistoryPanel`
-  (today's play history, read-only)
+  (today's play history, read-only), `FullscreenToggle` (the browser
+  Fullscreen API toggle button, next to the ⋮ settings trigger — not the
+  Now Playing Screen, which is a different, same-app "full screen" concept)
 - `history/HistoryContext.tsx` — the Track History on/off setting; fetched
   once from the server and shared (both `Sidebar`, to show/hide the History
   nav item, and every `SettingsPanel` instance need the same live value —
@@ -490,6 +492,26 @@ Worth knowing before you re-discover these the hard way:
   genuinely takes a while. Right-click (or long-press) an album card in
   the Albums grid also opens the bulk editor for that whole album, same
   as selecting all its tracks from the track list would.
+- ✅ Artists → Albums navigation — selecting an artist from the Artists tab
+  now goes to the Albums tab filtered to that artist's albums (instead of
+  a flat track list), with a 2-level breadcrumb when you then drill into
+  one of those albums ("← Back to {artist}", then "← Back to artists").
+  See `App.tsx`'s `albumsArtistFilter` state, separate from `drillDown`.
+- ✅ Universal "Cancel" option on the shared long-press/right-click context
+  menu (`TrackContextMenu`) — previously the only way to dismiss it was to
+  tap elsewhere (not discoverable after a touch long-press) or pick a real
+  action. Applies everywhere the component is used.
+- ✅ Fixed mobile long-press on an album card opening the OS's native image
+  context menu instead of the app's custom one — the album art `<img>`
+  now has `pointer-events: none` so the long-press always targets the
+  parent card, same technique as `TrackList`'s row long-press.
+- ✅ Fixed the "N matches" search count showing even with an empty search
+  box on the Artists/Albums/Genres section search bars.
+- ✅ Moved the browser-fullscreen toggle out of the Settings menu into its
+  own icon button (`FullscreenToggle`) next to the ⋮ trigger, styled like
+  YouTube's expand/collapse control — outward corner-bracket icon when not
+  fullscreen, inward when in fullscreen. Appears both in the main sidebar
+  header and the Now Playing Screen's header.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 
