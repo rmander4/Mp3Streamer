@@ -17,6 +17,7 @@ public static class LibraryEndpoints
             string? search,
             string? artist,
             string? album,
+            string? albumArtist,
             string? genre,
             int page = 1,
             int pageSize = 50) =>
@@ -40,6 +41,12 @@ public static class LibraryEndpoints
 
             if (!string.IsNullOrWhiteSpace(album))
                 query = query.Where(t => t.Album == album);
+
+            // Disambiguates same-named albums by different artists (e.g. two
+            // bands each with an album called "Onward") — matches how Albums
+            // are grouped (AlbumArtist, falling back to Artist).
+            if (!string.IsNullOrWhiteSpace(albumArtist))
+                query = query.Where(t => (t.AlbumArtist ?? t.Artist) == albumArtist);
 
             if (!string.IsNullOrWhiteSpace(genre))
                 query = query.Where(t => t.Genre == genre);

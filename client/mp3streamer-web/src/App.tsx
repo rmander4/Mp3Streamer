@@ -24,6 +24,9 @@ import './App.css';
 interface DrillDown {
   kind: 'album' | 'genre';
   value: string;
+  // Only meaningful for kind === 'album' — disambiguates same-named albums
+  // by different artists (e.g. two unrelated bands both with an "Onward").
+  artist?: string | null;
 }
 
 const SAVED_VIEW_KEY = 'mp3streamer.view';
@@ -104,6 +107,7 @@ function App() {
       {
         search: search || undefined,
         album: drillDown?.kind === 'album' ? drillDown.value : undefined,
+        albumArtist: drillDown?.kind === 'album' ? (drillDown.artist ?? undefined) : undefined,
         genre: drillDown?.kind === 'genre' ? drillDown.value : undefined,
       },
       controller.signal,
@@ -190,9 +194,9 @@ function App() {
             setAlbumsArtistFilter(name);
             setView('albums');
           }}
-          onSelectAlbum={(album) => {
+          onSelectAlbum={(album, artist) => {
             setView('albums');
-            setDrillDown({ kind: 'album', value: album });
+            setDrillDown({ kind: 'album', value: album, artist });
           }}
         />
       );
@@ -205,7 +209,7 @@ function App() {
       return (
         <AlbumGrid
           albums={visibleAlbums}
-          onSelect={(album) => setDrillDown({ kind: 'album', value: album.album })}
+          onSelect={(album) => setDrillDown({ kind: 'album', value: album.album, artist: album.artist })}
           onTracksEdited={() => fetchAlbums().then(setAlbums).catch((e) => setError(String(e)))}
         />
       );
