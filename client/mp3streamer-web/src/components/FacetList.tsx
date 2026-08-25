@@ -6,12 +6,13 @@ import { artworkUrl } from '../api/client';
 interface FacetListProps {
   facets: Facet[];
   onSelect: (name: string) => void;
-  onSelectAlbum?: (album: string) => void;
+  onSelectAlbum?: (album: string, artist: string) => void;
 }
 
 interface AlbumArtStackProps {
   albumArt: AlbumArt[];
-  onSelectAlbum: (album: string) => void;
+  artist: string;
+  onSelectAlbum: (album: string, artist: string) => void;
 }
 
 // Beyond this many albums, a static row gets too wide to be useful — switch
@@ -40,7 +41,7 @@ const MARQUEE_WINDOW_WIDTH = 130;
 // How long the track sits still at each end before reversing.
 const MARQUEE_HOLD_MS = 2000;
 
-function AlbumArtStack({ albumArt, onSelectAlbum }: AlbumArtStackProps) {
+function AlbumArtStack({ albumArt, artist, onSelectAlbum }: AlbumArtStackProps) {
   const [failed, setFailed] = useState<Set<number>>(new Set());
 
   if (albumArt.length === 0) return null;
@@ -49,7 +50,7 @@ function AlbumArtStack({ albumArt, onSelectAlbum }: AlbumArtStackProps) {
   // from also triggering the parent row's artist-select handler.
   const handleSelect = (e: React.SyntheticEvent, album: string) => {
     e.stopPropagation();
-    onSelectAlbum(album);
+    onSelectAlbum(album, artist);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, album: string) => {
@@ -217,7 +218,7 @@ export function FacetList({ facets, onSelect, onSelectAlbum }: FacetListProps) {
           <button className="facet-item" onClick={() => onSelect(f.name)}>
             <span>{f.name}</span>
             {f.albumArt && onSelectAlbum ? (
-              <AlbumArtStack albumArt={f.albumArt} onSelectAlbum={onSelectAlbum} />
+              <AlbumArtStack albumArt={f.albumArt} artist={f.name} onSelectAlbum={onSelectAlbum} />
             ) : null}
             <span className="facet-count">{f.trackCount}</span>
           </button>

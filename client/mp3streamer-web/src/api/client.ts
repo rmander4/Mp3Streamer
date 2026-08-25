@@ -23,6 +23,7 @@ export interface TrackQuery {
   search?: string;
   artist?: string;
   album?: string;
+  albumArtist?: string;
   genre?: string;
   page?: number;
   pageSize?: number;
@@ -33,6 +34,7 @@ export function fetchTracks(query: TrackQuery = {}, signal?: AbortSignal): Promi
   if (query.search) params.set('search', query.search);
   if (query.artist) params.set('artist', query.artist);
   if (query.album) params.set('album', query.album);
+  if (query.albumArtist) params.set('albumArtist', query.albumArtist);
   if (query.genre) params.set('genre', query.genre);
   params.set('page', String(query.page ?? 1));
   params.set('pageSize', String(query.pageSize ?? 100));
