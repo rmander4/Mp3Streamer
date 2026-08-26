@@ -38,6 +38,14 @@ function getSavedView(): ViewKey {
   return saved && VIEW_KEYS.includes(saved as ViewKey) ? (saved as ViewKey) : 'all';
 }
 
+type AlbumSort = 'name' | 'year';
+const SAVED_ALBUM_SORT_KEY = 'mp3streamer.albumSort';
+
+function getSavedAlbumSort(): AlbumSort {
+  const saved = localStorage.getItem(SAVED_ALBUM_SORT_KEY);
+  return saved === 'year' ? 'year' : 'name';
+}
+
 function App() {
   const [view, setView] = useState<ViewKey>(getSavedView);
   const [search, setSearch] = useState('');
@@ -57,6 +65,7 @@ function App() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [albumPageSize, setAlbumPageSize] = useState(50);
   const [albumPage, setAlbumPage] = useState(1);
+  const [albumSort, setAlbumSort] = useState<AlbumSort>(getSavedAlbumSort);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +100,12 @@ function App() {
 
   useEffect(() => {
     setAlbumPage(1);
-  }, [sectionSearch]);
+  }, [sectionSearch, albumSort]);
+
+  const handleAlbumSortChange = (next: AlbumSort) => {
+    setAlbumSort(next);
+    localStorage.setItem(SAVED_ALBUM_SORT_KEY, next);
+  };
 
   useEffect(() => {
     const showTrackList = view === 'all' || drillDown !== null;
@@ -180,7 +194,19 @@ function App() {
 
   const filteredAlbums = albums
     .filter((album) => !albumsArtistFilter || album.artist === albumsArtistFilter)
-    .filter((album) => `${album.album} ${album.artist ?? ''}`.toLowerCase().includes(sectionSearch.toLowerCase()));
+    .filter((album) => `${album.album} ${album.artist ?? ''}`.toLowerCase().includes(sectionSearch.toLowerCase()))
+    .sort((a, b) => {
+      // Name: the backend already returns albums ordered by artist then
+      // album name, and filtering preserves that order — nothing to do.
+      if (albumSort !== 'year') return 0;
+      // Year: undated albums sink to the end rather than clumping at
+      // whichever end Infinity/-Infinity would put them, since "unknown
+      // year" isn't meaningfully "earliest" or "latest".
+      if (a.year == null && b.year == null) return 0;
+      if (a.year == null) return 1;
+      if (b.year == null) return -1;
+      return a.year - b.year;
+    });
   const albumPageCount = albumPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredAlbums.length / albumPageSize));
   const visibleAlbums = albumPageSize === 0
     ? filteredAlbums
@@ -320,6 +346,17 @@ function App() {
                 ) : null}
                 {view === 'albums' ? (
                   <>
+                    <label className="album-page-size">
+                      <span>Sort</span>
+                      <select
+                        value={albumSort}
+                        onChange={(event) => handleAlbumSortChange(event.target.value as AlbumSort)}
+                        aria-label="Sort albums by"
+                      >
+                        <option value="name">Name</option>
+                        <option value="year">Year</option>
+                      </select>
+                    </label>
                     <label className="album-page-size">
                       <span>Show</span>
                       <select
