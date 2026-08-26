@@ -45,6 +45,10 @@ export function fetchArtists(): Promise<Facet[]> {
   return getJson('/api/artists');
 }
 
+export function fetchAlbumArtists(): Promise<Facet[]> {
+  return getJson('/api/album-artists');
+}
+
 export function fetchGenres(): Promise<Facet[]> {
   return getJson('/api/genres');
 }

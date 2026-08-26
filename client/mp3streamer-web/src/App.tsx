@@ -8,6 +8,7 @@ import { PlaylistPanel } from './components/PlaylistPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import {
   addTrackToPlaylist,
+  fetchAlbumArtists,
   fetchAlbums,
   fetchArtists,
   fetchGenres,
@@ -30,7 +31,7 @@ interface DrillDown {
 }
 
 const SAVED_VIEW_KEY = 'mp3streamer.view';
-const VIEW_KEYS: ViewKey[] = ['all', 'artists', 'albums', 'genres', 'playlists', 'history'];
+const VIEW_KEYS: ViewKey[] = ['all', 'albumArtists', 'artists', 'albums', 'genres', 'playlists', 'history'];
 
 function getSavedView(): ViewKey {
   const saved = localStorage.getItem(SAVED_VIEW_KEY);
@@ -42,14 +43,16 @@ function App() {
   const [search, setSearch] = useState('');
   const [sectionSearch, setSectionSearch] = useState('');
   const [drillDown, setDrillDown] = useState<DrillDown | null>(null);
-  // Selecting an artist from the Artists tab jumps to Albums filtered to
-  // just that artist's albums, rather than straight to a track list — set
-  // alongside `view`, cleared whenever navigating away via the sidebar or
-  // via its own "Back to artists" breadcrumb.
+  // Selecting an artist (or album artist) from those tabs jumps to Albums
+  // filtered to just that artist's albums, rather than straight to a track
+  // list. `albumsFilterSource` remembers which tab it came from, so the
+  // breadcrumb can send you back to the right one.
   const [albumsArtistFilter, setAlbumsArtistFilter] = useState<string | null>(null);
+  const [albumsFilterSource, setAlbumsFilterSource] = useState<ViewKey | null>(null);
 
   const [tracks, setTracks] = useState<Track[]>([]);
   const [artists, setArtists] = useState<Facet[]>([]);
+  const [albumArtists, setAlbumArtists] = useState<Facet[]>([]);
   const [genres, setGenres] = useState<Facet[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [albumPageSize, setAlbumPageSize] = useState(50);
@@ -63,6 +66,7 @@ function App() {
     localStorage.setItem(SAVED_VIEW_KEY, next);
     setDrillDown(null);
     setAlbumsArtistFilter(null);
+    setAlbumsFilterSource(null);
     setSearch('');
     setSectionSearch('');
     fetchPlaylists().then(setPlaylists);
@@ -74,7 +78,9 @@ function App() {
 
   useEffect(() => {
     setError(null);
-    if (view === 'artists' && !drillDown) {
+    if (view === 'albumArtists' && !drillDown) {
+      fetchAlbumArtists().then(setAlbumArtists).catch((e) => setError(String(e)));
+    } else if (view === 'artists' && !drillDown) {
       fetchArtists().then(setArtists).catch((e) => setError(String(e)));
     } else if (view === 'genres' && !drillDown) {
       fetchGenres().then(setGenres).catch((e) => setError(String(e)));
@@ -185,6 +191,23 @@ function App() {
       return <p className="error-state">{error}</p>;
     }
 
+    if (view === 'albumArtists' && !drillDown) {
+      const filteredAlbumArtists = albumArtists.filter((a) => a.name.toLowerCase().includes(sectionSearch.toLowerCase()));
+      return (
+        <FacetList
+          facets={filteredAlbumArtists}
+          onSelect={(name) => {
+            setAlbumsArtistFilter(name);
+            setAlbumsFilterSource('albumArtists');
+            setView('albums');
+          }}
+          onSelectAlbum={(album, artist) => {
+            setView('albums');
+            setDrillDown({ kind: 'album', value: album, artist });
+          }}
+        />
+      );
+    }
     if (view === 'artists' && !drillDown) {
       const filteredArtists = artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase()));
       return (
@@ -192,6 +215,7 @@ function App() {
           facets={filteredArtists}
           onSelect={(name) => {
             setAlbumsArtistFilter(name);
+            setAlbumsFilterSource('artists');
             setView('albums');
           }}
           onSelectAlbum={(album, artist) => {
@@ -271,23 +295,26 @@ function App() {
                 className="back-link"
                 onClick={() => {
                   setAlbumsArtistFilter(null);
-                  setView('artists');
+                  setView(albumsFilterSource ?? 'artists');
+                  setAlbumsFilterSource(null);
                 }}
               >
-                &larr; Back to artists
+                &larr; Back to {albumsFilterSource === 'albumArtists' ? 'album artist' : 'artists'}
               </button>
             ) : null}
             {view === 'all' || drillDown ? <SearchBar onSearch={setSearch} /> : null}
             {view !== 'all' && !drillDown && view !== 'playlists' && view !== 'history' ? (
               <div className="section-search-row">
-                <SearchBar onSearch={setSectionSearch} placeholder={`Search ${view}...`} />
+                <SearchBar onSearch={setSectionSearch} placeholder={`Search ${view === 'albumArtists' ? 'album artists' : view}...`} />
                 {sectionSearch.trim() ? (
                   <span className="search-match-count">
-                    {view === 'artists'
-                      ? artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
-                      : view === 'albums'
-                        ? filteredAlbums.length
-                        : genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase())).length}{' '}
+                    {view === 'albumArtists'
+                      ? albumArtists.filter((a) => a.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
+                      : view === 'artists'
+                        ? artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
+                        : view === 'albums'
+                          ? filteredAlbums.length
+                          : genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase())).length}{' '}
                     matches
                   </span>
                 ) : null}
