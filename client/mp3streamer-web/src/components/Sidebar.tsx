@@ -3,10 +3,11 @@ import { SettingsPanel } from './SettingsPanel';
 import { FullscreenToggle } from './FullscreenToggle';
 import { useHistorySetting } from '../history/HistoryContext';
 
-export type ViewKey = 'all' | 'artists' | 'albums' | 'genres' | 'playlists' | 'history';
+export type ViewKey = 'all' | 'albumArtists' | 'artists' | 'albums' | 'genres' | 'playlists' | 'history';
 
 const VIEWS: { key: ViewKey; label: string }[] = [
   { key: 'all', label: 'All Tracks' },
+  { key: 'albumArtists', label: 'Album Artist' },
   { key: 'artists', label: 'Artists' },
   { key: 'albums', label: 'Albums' },
   { key: 'genres', label: 'Genres' },

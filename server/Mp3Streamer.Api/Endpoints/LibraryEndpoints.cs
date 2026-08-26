@@ -97,6 +97,37 @@ public static class LibraryEndpoints
             return Results.Ok(artists);
         });
 
+        app.MapGet("/api/album-artists", async (LibraryDbContext db) =>
+        {
+            // Same shape as /api/artists, but grouped by AlbumArtist (falling
+            // back to Artist for tracks that never got one) instead of the
+            // per-track Artist — mirrors how Albums are grouped, so a track
+            // credited to "Band feat. Someone" still lands under "Band".
+            var trackCounts = await db.Tracks
+                .Where(t => t.AlbumArtist != null || t.Artist != null)
+                .GroupBy(t => t.AlbumArtist ?? t.Artist)
+                .Select(g => new { Name = g.Key!, Count = g.Count() })
+                .ToListAsync();
+
+            var albumSamples = await db.Tracks
+                .Where(t => (t.AlbumArtist != null || t.Artist != null) && t.Album != null)
+                .GroupBy(t => new { Artist = t.AlbumArtist ?? t.Artist, t.Album })
+                .Select(g => new { Artist = g.Key.Artist!, Album = g.Key.Album!, SampleTrackId = g.Min(t => t.Id) })
+                .ToListAsync();
+
+            var albumArtByArtist = albumSamples
+                .GroupBy(a => a.Artist)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(a => a.Album).Select(a => new AlbumArtDto(a.SampleTrackId, a.Album)).ToArray());
+
+            var albumArtists = trackCounts
+                .Select(a => new ArtistDto(a.Name, a.Count, albumArtByArtist.GetValueOrDefault(a.Name, [])))
+                .OrderBy(a => a.Name);
+
+            return Results.Ok(albumArtists);
+        });
+
         app.MapGet("/api/genres", async (LibraryDbContext db) =>
         {
             var genres = await db.Tracks
