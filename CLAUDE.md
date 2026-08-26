@@ -685,6 +685,13 @@ Worth knowing before you re-discover these the hard way:
   gained a `Year` field to support it. See the `select option` gotcha
   below — building this surfaced a page-wide dark-mode bug in every
   native `<select>` dropdown's popup list, not just the new one.
+- ✅ Album grid title/artist labels are single-line-only, sliding via a
+  pure-CSS marquee (`MarqueeLabel` in `AlbumGrid.tsx`) instead of
+  wrapping or ellipsis-truncating when they don't fit — no pause at the
+  ends, unlike the Artists-tab album-art marquee, since nothing here is
+  clickable mid-scroll. Only needs JS to measure each label's own
+  overflow once; the animation itself is a plain `@keyframes` +
+  `animation-direction: alternate`.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

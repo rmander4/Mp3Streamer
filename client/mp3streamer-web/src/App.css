@@ -855,29 +855,46 @@
   pointer-events: none;
 }
 
+.album-card-title,
+.album-card-artist {
+  /* Single line always, sliding via MarqueeLabel/.marquee-active instead
+     of wrapping or ellipsis-truncating when it doesn't fit — since every
+     card's title/artist is now exactly one line, cards line up in a row
+     without needing the old fixed-2-lines min-height reservation this
+     replaced. */
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .album-card-title {
   font-weight: 600;
   font-size: 14px;
   line-height: 1.3;
-  /* Reserve room for 2 lines always, truncating anything longer with an
-     ellipsis — without this, a long title (e.g. "Something Wicked This
-     Way Comes") wraps to 3 lines and makes that one card taller than its
-     row-mates, throwing off the grid's alignment. A short title still
-     reserves the same 2-line height via min-height, so every card in a
-     row lines up regardless of how long its neighbors' titles are. */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: calc(1.3em * 2);
 }
 
 .album-card-artist {
   font-size: 13px;
   color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.marquee-text {
+  display: inline-block;
+}
+
+.marquee-active .marquee-text {
+  animation-name: album-label-marquee;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes album-label-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-1 * var(--marquee-distance, 0px)));
+  }
 }
 
 .now-playing-bar {
