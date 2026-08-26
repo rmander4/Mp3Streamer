@@ -38,6 +38,7 @@ export interface Album {
   artist: string | null;
   trackCount: number;
   sampleTrackId: number;
+  year: number | null;
 }
 
 export interface PlaylistSummary {

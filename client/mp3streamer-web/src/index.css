@@ -17,7 +17,16 @@
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
+  /* Not "light dark" — that hands the choice to the OS's own preference,
+     which can disagree with this app's own theme setting (e.g. app theme
+     set to Dark while the OS itself is still in light mode). Native
+     controls — a <select>'s dropdown popup, in particular — render
+     using whichever scheme this resolves to, regardless of this app's
+     own --bg/--text colors on the closed control, so it has to track the
+     *active* theme, not just sit at a static default. Overridden to
+     `dark` in the same two places below that already override the color
+     variables for dark mode, so it always stays in sync with them. */
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -28,6 +37,21 @@
   @media (max-width: 1024px) {
     font-size: 16px;
   }
+}
+
+/* Belt-and-suspenders alongside color-scheme above: confirmed via testing
+   that color-scheme alone isn't enough here — the <select> popup list
+   still rendered with the browser's light default regardless of the
+   resolved scheme, on top of which every select in this app already sets
+   its own background/color for the closed control, but that doesn't
+   automatically carry into the popup list the way it might look like it
+   should. Explicit colors on <option> itself is the more reliable,
+   less browser-dependent fix, and needs no extra dark/light branching —
+   --bg/--text-h already resolve to the active theme's colors, so this
+   just has to reference them. */
+select option {
+  background-color: var(--bg);
+  color: var(--text-h);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +67,7 @@
     --social-bg: rgba(47, 48, 58, 0.5);
     --shadow:
       rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+    color-scheme: dark;
   }
 
   #social .button-icon {
@@ -62,6 +87,7 @@
   --social-bg: rgba(47, 48, 58, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  color-scheme: dark;
 }
 
 #root {

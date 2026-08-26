@@ -27,7 +27,7 @@ public record ArtistDto(string Name, int TrackCount, AlbumArtDto[] AlbumArt);
 
 public record AlbumArtDto(int TrackId, string Album);
 
-public record AlbumDto(string Album, string? Artist, int TrackCount, int SampleTrackId);
+public record AlbumDto(string Album, string? Artist, int TrackCount, int SampleTrackId, int? Year);
 
 public record PlaylistSummaryDto(int Id, string Name, int TrackCount);
 

@@ -145,10 +145,10 @@ public static class LibraryEndpoints
             var albums = await db.Tracks
                 .Where(t => t.Album != null)
                 .GroupBy(t => new { t.Album, Artist = t.AlbumArtist ?? t.Artist })
-                .Select(g => new { g.Key.Album, g.Key.Artist, Count = g.Count(), SampleTrackId = g.Min(t => t.Id) })
+                .Select(g => new { g.Key.Album, g.Key.Artist, Count = g.Count(), SampleTrackId = g.Min(t => t.Id), Year = g.Min(t => t.Year) })
                 .ToListAsync();
             return Results.Ok(albums
-                .Select(a => new AlbumDto(a.Album!, a.Artist, a.Count, a.SampleTrackId))
+                .Select(a => new AlbumDto(a.Album!, a.Artist, a.Count, a.SampleTrackId, a.Year))
                 .OrderBy(a => a.Artist)
                 .ThenBy(a => a.Album));
         });

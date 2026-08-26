@@ -406,6 +406,24 @@ Worth knowing before you re-discover these the hard way:
     at the start of every new track, a track loaded right after a prior
     track's handoff would start on a still-muted element and play with
     no audio at all. Confirmed via reproduction, not assumption.
+- **`color-scheme` alone does not reliably theme a native `<select>`'s
+  *popup list* — style the `<option>` elements directly instead.** Found
+  building the Albums sort control: the closed `<select>` box already had
+  the right dark colors, but opening it showed the option list rendered
+  in the browser's plain light default, barely readable. The obvious fix
+  — setting `color-scheme: dark` (scoped to the app's actual active theme
+  rather than the OS's own preference, since those can disagree) — turned
+  out not to be enough by itself in this browser; confirmed via an actual
+  screenshot of the open popup, not just by inspecting the CSS. What
+  worked: `select option { background-color: var(--bg); color:
+  var(--text-h); }` — no extra dark/light branching needed there, since
+  those variables already resolve to the active theme's colors. Reported
+  first on the new dropdown, then confirmed by Ryan on the pre-existing
+  "Show" page-size dropdown too, proving it was a page-wide bug that
+  simply hadn't been noticed yet, not something the new control
+  introduced. If a future native-control dark-mode issue shows up, reach
+  for explicit `<option>`/similar styling before trusting `color-scheme`
+  alone.
 
 ## Done since the original plan
 
@@ -662,6 +680,11 @@ Worth knowing before you re-discover these the hard way:
   Ryan provided. See the `.tags-art-buttons` gotcha below if reusing
   `.settings-option` inside a *column*-direction flex container again —
   its base `flex: 1` silently wins over an explicit `height` there.
+- ✅ Album sort control (Name / Year) on the Albums tab, persisted to
+  `localStorage` (`mp3streamer.albumSort`). `AlbumDto`/`GET /api/albums`
+  gained a `Year` field to support it. See the `select option` gotcha
+  below — building this surfaced a page-wide dark-mode bug in every
+  native `<select>` dropdown's popup list, not just the new one.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

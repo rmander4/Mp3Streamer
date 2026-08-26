@@ -14,6 +14,43 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-26 — Ryan (1)
+
+- Added a **Sort** control (Name / Year) next to "Show" on the Albums tab
+  — most relevant when filtered to one artist via the breadcrumb (e.g.
+  clicking Metallica from Artists → Albums), but works on the unfiltered
+  Albums view too. Sorting by Year is ascending (oldest first) — Ryan's
+  own example: Metallica's *Ride the Lightning* (1984) → *Master of
+  Puppets* (1986) → *...And Justice for All* (1988), instead of the
+  default alphabetical order. The choice persists to `localStorage`
+  (`mp3streamer.albumSort`) so it doesn't need reselecting each time,
+  same pattern as the saved-view setting. Needed a new `Year` field on
+  `AlbumDto`/`GET /api/albums` (grouped the same way the endpoint already
+  groups everything else — `g.Min(t => t.Year)` per album) since the
+  frontend didn't have per-album year data at all before this. Explicitly
+  a "let's see if I like it" preview per Ryan before committing to it —
+  built and verified on the test instance first, confirmed working
+  end-to-end (including the persistence) before being asked to keep it.
+- **Fixed a real, page-wide dark-mode bug found during that same
+  preview**: native `<select>` dropdown *popup lists* (not the closed
+  control, which was already styled correctly) rendered with the
+  browser's light-mode default regardless of the app's own dark theme —
+  reported first on the new Sort dropdown, then confirmed by Ryan on the
+  pre-existing "Show" dropdown too, proving it wasn't new. Root cause:
+  `color-scheme: light dark` at `:root` hands the choice to the *OS's*
+  own preference for native-control rendering, which can disagree with
+  this app's own theme setting; scoping `color-scheme` to actually track
+  the active theme (same three places `--bg`/`--text` etc. already
+  branch on) turned out not to be enough by itself either — confirmed via
+  real screenshots of the open popup, not just the CSS declarations
+  looking correct on paper. The fix that actually worked: explicit
+  `background-color`/`color` on `select option` itself, referencing the
+  same `--bg`/`--text-h` variables (no extra dark/light branching needed
+  there, since those variables already resolve correctly per theme).
+  Worth remembering if a future dropdown/native-control theming issue
+  shows up: `color-scheme` alone isn't reliable for this, style the
+  `<option>`s directly.
+
 ## 2026-08-24 — Ryan (10)
 
 - **Fixed a real bug reported live**: tracks over 5 minutes would sometimes
