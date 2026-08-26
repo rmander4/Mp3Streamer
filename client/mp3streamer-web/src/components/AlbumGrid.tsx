@@ -1,8 +1,55 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Album, Track } from '../api/types';
 import { artworkUrl, fetchTracks } from '../api/client';
 import { TrackContextMenu, type ContextMenuItem } from './TrackContextMenu';
 import { EditTagsBulkDialog } from './EditTagsBulkDialog';
+
+// Pixels/second the text travels — tuned to be readable, not distracting.
+const LABEL_MARQUEE_PX_PER_SECOND = 30;
+const LABEL_MARQUEE_MIN_SECONDS = 4;
+
+// Keeps a title/artist label to one line, sliding it back and forth (pure
+// CSS animation, no pause at the ends — unlike the Artists-tab album-art
+// marquee, nothing here is meant to be clicked mid-scroll) instead of
+// wrapping to a second line or truncating with an ellipsis. Only the
+// overflow *amount* needs measuring in JS — how far the animation has to
+// travel varies per label, which a static CSS rule can't know on its own —
+// the actual back-and-forth motion is a plain `@keyframes` + `alternate`.
+function MarqueeLabel({ text, className }: { text: string; className: string }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [overflowPx, setOverflowPx] = useState(0);
+
+  useEffect(() => {
+    const measure = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      setOverflowPx(Math.max(0, el.scrollWidth - el.clientWidth));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [text]);
+
+  const isMarquee = overflowPx > 0;
+
+  return (
+    <div ref={wrapRef} className={isMarquee ? `${className} marquee-active` : className}>
+      <span
+        className="marquee-text"
+        style={
+          isMarquee
+            ? ({
+                '--marquee-distance': `${overflowPx}px`,
+                animationDuration: `${Math.max(LABEL_MARQUEE_MIN_SECONDS, overflowPx / LABEL_MARQUEE_PX_PER_SECOND)}s`,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {text}
+      </span>
+    </div>
+  );
+}
 
 interface AlbumGridProps {
   albums: Album[];
@@ -103,8 +150,8 @@ export function AlbumGrid({ albums, onSelect, onTracksEdited }: AlbumGridProps) 
                 (e.target as HTMLImageElement).style.visibility = 'hidden';
               }}
             />
-            <div className="album-card-title">{album.album}</div>
-            <div className="album-card-artist">{album.artist ?? 'Unknown Artist'}</div>
+            <MarqueeLabel className="album-card-title" text={album.album} />
+            <MarqueeLabel className="album-card-artist" text={album.artist ?? 'Unknown Artist'} />
           </button>
         ))}
       </div>

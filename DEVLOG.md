@@ -14,6 +14,22 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-26 — Ryan (2)
+
+- Album/artist labels on the Albums grid now stay to exactly one line
+  each and slide left-then-right (pure CSS `@keyframes` +
+  `animation-direction: alternate`, no pause at the ends — unlike the
+  Artists-tab album-art marquee, nothing here is meant to be clicked
+  mid-scroll) instead of the title wrapping to a second line or the
+  artist name truncating with an ellipsis. New `MarqueeLabel` in
+  `AlbumGrid.tsx` — the only JS needed is measuring each label's own
+  overflow (`scrollWidth - clientWidth`) once on mount/resize to decide
+  whether to animate at all and how far; a label that already fits stays
+  completely static, no unwanted animation. Nice side effect: every
+  card is now exactly the same height (single-line labels are inherently
+  uniform), which replaces the old fixed-2-lines `min-height` reservation
+  hack that existed only to solve that same alignment problem the old way.
+
 ## 2026-08-26 — Ryan (1)
 
 - Added a **Sort** control (Name / Year) next to "Show" on the Albums tab
