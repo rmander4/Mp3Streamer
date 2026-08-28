@@ -1244,8 +1244,20 @@
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
+  /* Bottom padding (48px) is deliberately larger than top (16px) — it's
+     matched to .fullscreen-header's own total footprint (16px player
+     padding + 28px button height + 4px margin-bottom = 48px), not a
+     typo. .fullscreen-header stays a normal in-flow sibling above
+     .fullscreen-main (see .fullscreen-main's comment below for why), so
+     it eats 48px of *real* vertical space at the top that has no
+     equivalent on the bottom edge by default — which is exactly what
+     made the art hug the bottom with a leftover gap up top. Reserving
+     that same 48px at the bottom via padding mirrors it, so .fullscreen-
+     main ends up sandwiched between two equal margins and centers
+     correctly. If .fullscreen-header's own size ever changes, this
+     number needs to change with it.  */
   .fullscreen-player {
-    padding: 16px 32px;
+    padding: 16px 32px 48px;
     gap: 0;
     overflow-y: auto;
   }
@@ -1255,12 +1267,49 @@
     margin-bottom: 4px;
   }
 
+  /* flex: 1 (not height: 100%) — height: 100% sized .fullscreen-main
+     against .fullscreen-player's *full* height, ignoring that
+     .fullscreen-header is a sibling that also takes up real space above
+     it; the combined content ended up taller than the screen, and the
+     overflow got clipped asymmetrically (gap at the top, art touching
+     the bottom) rather than splitting evenly — centering overflowing
+     content in a scrollable container shows the start edge by default,
+     not a true visual center. flex: 1 instead makes .fullscreen-main
+     claim exactly the space actually left over after the header, which
+     both centers it correctly (nothing left to overflow) and — unlike
+     an earlier attempt at this fix that took the header out of flow
+     entirely via position: absolute — keeps it a real sibling, so at
+     short heights .fullscreen-main's content still starts below it
+     instead of the header floating on top and overlapping the seek bar.
+     min-height: 0 is required alongside flex: 1 here: without it, a flex
+     item's default min-height is auto (its content's natural size), which
+     can still force this row taller than the space actually available.
+     Combined with the mirrored bottom padding above, .fullscreen-main now
+     fills the exact space between two equal-height margins, so
+     .fullscreen-art (height: 100%, matching .fullscreen-main's own
+     height exactly) ends up equidistant from the top and bottom of the
+     screen — confirmed via getBoundingClientRect() at 568x320, 640x360,
+     and 700x420. */
+  /* align-items: flex-start, not center — at very short viewport heights,
+     .fullscreen-details' own natural content (title/subtitle/stars/seek/
+     controls stacked up) can be taller than .fullscreen-main actually has
+     room for. Centering an over-tall flex item makes it overflow its
+     container symmetrically both above *and* below — the "above" half
+     poked up into the header's own space and collided with the seek bar.
+     Anchoring to the top means any such overflow only ever extends
+     downward, where .fullscreen-player's overflow-y: auto can scroll to
+     it, never back up into the header. Doesn't affect .fullscreen-art's
+     own centering either way — .fullscreen-art sets height: 100%
+     explicitly, which fixes its cross-axis size directly and makes
+     align-items a no-op for it specifically; this only governs
+     .fullscreen-details' position within the row. */
   .fullscreen-main {
     flex-direction: row;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     gap: 32px;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
   }
 
   .fullscreen-art {
