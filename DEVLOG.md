@@ -14,6 +14,21 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-28 — Ryan (1)
+
+- Enlarged the Now Playing Screen's album art in the landscape mobile
+  layout — Ryan sent a screenshot showing a lot of unused space next to a
+  fairly small art box. Root cause: `.fullscreen-art` was hard-capped at
+  `max-height: 260px` in that layout's media query, well under what's
+  actually available in the row alongside the track info/controls.
+  Raised the cap to 420px (`height: 100%` is still what actually drives
+  the size day-to-day — the cap is just a safety ceiling). Verified at
+  two different landscape phone heights (667×375 and a smaller/older
+  568×320) via viewport emulation: art now genuinely fills available
+  height (343px measured on the larger one, well up from the old
+  260px ceiling) and scales down cleanly on the smaller one with no
+  overflow.
+
 ## 2026-08-26 — Ryan (2)
 
 - Album/artist labels on the Albums grid now stay to exactly one line
