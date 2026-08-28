@@ -312,18 +312,36 @@ Worth knowing before you re-discover these the hard way:
   root cause once bit `/api/tracks/{id}/artwork` too (see its own
   comment in `LibraryEndpoints.cs`: it was setting a 24-hour
   `Cache-Control` even on a 404 for a track with no art yet).
-- **The dev/test environment was never actually isolated from
-  production.** `appsettings.Development.json` only overrides
-  `LibraryRootPaths`, not `ConnectionStrings` — so `dotnet run` on port
-  5289 was reading and writing the *same* production `library.db` and
-  the *same* real MP3 files as the live Windows Service the whole time.
-  This caused real damage 2026-08-24: test artwork uploads (solid color
-  test squares) overwrote real album art with no backup taken first —
-  see that date's DEVLOG entries for exactly which tracks. Give the dev
-  environment its own database file and a small copied subset of MP3s
-  before doing any more testing that writes data, especially anything
-  touching embedded artwork (which lives in the files themselves, not
-  just the DB, so there's no "just don't commit it" undo).
+- **The dev/test environment's database is now isolated from production
+  — but the MP3 files it scans are not.** Originally,
+  `appsettings.Development.json` only overrode `LibraryRootPaths`, not
+  `ConnectionStrings` — so `dotnet run` on port 5289 was reading and
+  writing the *same* production `library.db` as the live Windows Service
+  the whole time. This caused real damage twice: test artwork uploads on
+  2026-08-24 (solid color test squares overwrote real album art with no
+  backup taken first — see that date's DEVLOG entries for exactly which
+  tracks), and again on 2026-08-28 when routine landscape-CSS testing on
+  the dev instance clobbered the single-row `PlaybackState` table with a
+  test track, causing the live cross-device resume prompt to suggest the
+  wrong song to Ryan on his phone. Fixed the same day:
+  `appsettings.Development.json` now sets its own `ConnectionStrings:Library`
+  (`library.dev.db`, a one-time copy of `library.db` — gitignored like
+  the production DB itself, so each person's checkout needs its own copy;
+  see the dev workflow below) and an explicit `"Urls": "http://localhost:5289"`
+  (needed because plain `ASPNETCORE_URLS` env vars weren't reliably
+  overriding the base config's `Urls` in testing — setting it directly in
+  the Development config sidesteps that). Verified via direct API calls:
+  wrote playback state on the dev instance and confirmed prod's stayed
+  untouched. **This only isolates the database, though.** `LibraryRootPaths`
+  in `appsettings.Development.json` still points at the same real `Music`
+  folder prod uses (`..\..\Music`, which resolves to the same path) — so
+  anything that writes into the *file itself*, not just the DB (artwork
+  uploads, tag edits, ratings — all three go through TagLibSharp onto the
+  real MP3), is still exactly as dangerous on the dev instance as it was
+  before this fix. Don't test those against dev without first pointing
+  `LibraryRootPaths` at a small copied subset of MP3s, same as the
+  original version of this note said — that part was never actually
+  done.
 - **No authentication in v1** — deliberate, since it's LAN-only. Don't wire
   up anything internet-facing without building auth first (see below).
 - **`PUT /api/tracks/{id}/artwork-from-url` validates its URL against a
@@ -766,6 +784,22 @@ npm run build
 A `Music/` folder at the project root (gitignored) holds test mp3s for local
 development. Point `appsettings.Development.json`'s `LibraryRootPaths` at it,
 or at a real library path once one is decided.
+
+**One-time step, per machine, before running `dotnet run` locally:** create
+your own `library.dev.db` — `appsettings.Development.json`'s
+`ConnectionStrings:Library` points at it (relative to
+`server/Mp3Streamer.Api/`), separate from production's `library.db`, since
+2026-08-28 (see the dev/test-isolation gotcha above for why). It's
+gitignored like the production DB, so a fresh checkout won't have one yet:
+
+```bash
+cd server/Mp3Streamer.Api
+cp library.db library.dev.db   # a copy is enough — doesn't need to stay in sync
+```
+
+If you don't have a `library.db` yet either (brand new setup), just run the
+backend once — the migrations create an empty one — then copy it, or skip
+the copy and let `dotnet run` create `library.dev.db` fresh on first run.
 
 ## Running as a Windows Service (Ryan's actual deployment, since 2026-08-18/19)
 

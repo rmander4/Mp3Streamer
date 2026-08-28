@@ -14,6 +14,39 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-28 — Ryan (3)
+
+- Fixed a real bug this same day's testing caused: while verifying the
+  landscape art-centering fix (entry below) against the local dev
+  instance on port 5289, Ryan reported that his phone kept prompting to
+  resume an Alvarez track he hadn't actually played — he'd been playing
+  Tristania. Root cause: `appsettings.Development.json` never overrode
+  `ConnectionStrings`, so dev (port 5289) and prod (the live Windows
+  Service) were reading and writing the *same* `library.db` the whole
+  time — a known, previously-flagged gap (see 2026-08-24's entries and
+  the CLAUDE.md gotcha) that had never actually been fixed. Playing
+  Alvarez tracks on the dev instance during CSS testing overwrote the
+  single-row `PlaybackState` table, clobbering Ryan's real saved
+  position with test data. Confirmed via direct API calls — both ports
+  returned the identical stale state — then cleared it via
+  `DELETE /api/playback-state` on prod so the resume prompt stopped
+  showing the wrong song (his actual last Tristania position couldn't be
+  recovered, but normal saving resumes cleanly from his next pause).
+  Actual fix: `appsettings.Development.json` now points
+  `ConnectionStrings:Library` at its own `library.dev.db` (gitignored,
+  same as prod's DB — see CLAUDE.md's "Running it locally" section for
+  the one-time per-machine copy step) and sets an explicit
+  `"Urls": "http://localhost:5289"` (a plain `ASPNETCORE_URLS` env var
+  wasn't reliably overriding the base config's `Urls` in testing).
+  Verified real isolation, not just config: wrote playback state through
+  the dev instance's API and confirmed prod's stayed untouched.
+  **Note this only isolates the database** — `LibraryRootPaths` in dev
+  still points at the same real MP3 folder prod uses, so artwork/tag/
+  rating edits (which write into the actual file, not just the DB) are
+  still exactly as risky on dev as before. That part of the original
+  2026-08-24 fix was never done and still isn't — flagged again in
+  CLAUDE.md.
+
 ## 2026-08-28 — Ryan (2)
 
 - Fixed the landscape Now Playing Screen art (enlarged earlier the same
