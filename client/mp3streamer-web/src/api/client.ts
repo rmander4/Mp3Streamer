@@ -41,20 +41,52 @@ export function fetchTracks(query: TrackQuery = {}, signal?: AbortSignal): Promi
   return getJson(`/api/tracks?${params.toString()}`, signal);
 }
 
-export function fetchArtists(): Promise<Facet[]> {
-  return getJson('/api/artists');
+export interface FacetQuery {
+  search?: string;
+  page?: number;
+  pageSize?: number;
 }
 
-export function fetchAlbumArtists(): Promise<Facet[]> {
-  return getJson('/api/album-artists');
+export function fetchArtists(query: FacetQuery = {}, signal?: AbortSignal): Promise<PagedResult<Facet>> {
+  const params = new URLSearchParams();
+  if (query.search) params.set('search', query.search);
+  params.set('page', String(query.page ?? 1));
+  params.set('pageSize', String(query.pageSize ?? 100));
+  return getJson(`/api/artists?${params.toString()}`, signal);
 }
 
-export function fetchGenres(): Promise<Facet[]> {
-  return getJson('/api/genres');
+export function fetchAlbumArtists(query: FacetQuery = {}, signal?: AbortSignal): Promise<PagedResult<Facet>> {
+  const params = new URLSearchParams();
+  if (query.search) params.set('search', query.search);
+  params.set('page', String(query.page ?? 1));
+  params.set('pageSize', String(query.pageSize ?? 100));
+  return getJson(`/api/album-artists?${params.toString()}`, signal);
 }
 
-export function fetchAlbums(): Promise<Album[]> {
-  return getJson('/api/albums');
+export function fetchGenres(query: FacetQuery = {}, signal?: AbortSignal): Promise<PagedResult<Facet>> {
+  const params = new URLSearchParams();
+  if (query.search) params.set('search', query.search);
+  params.set('page', String(query.page ?? 1));
+  params.set('pageSize', String(query.pageSize ?? 100));
+  return getJson(`/api/genres?${params.toString()}`, signal);
+}
+
+export interface AlbumQuery {
+  search?: string;
+  artist?: string;
+  sort?: 'name' | 'year';
+  page?: number;
+  pageSize?: number;
+}
+
+export function fetchAlbums(query: AlbumQuery = {}, signal?: AbortSignal): Promise<PagedResult<Album>> {
+  const params = new URLSearchParams();
+  if (query.search) params.set('search', query.search);
+  if (query.artist) params.set('artist', query.artist);
+  if (query.sort) params.set('sort', query.sort);
+  params.set('page', String(query.page ?? 1));
+  params.set('pageSize', String(query.pageSize ?? 100));
+  return getJson(`/api/albums?${params.toString()}`, signal);
 }
 
 export function triggerScan(): Promise<unknown> {

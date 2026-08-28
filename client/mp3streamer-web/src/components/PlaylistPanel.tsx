@@ -18,6 +18,13 @@ interface PlaylistPanelProps {
   onSearch: (term: string) => void;
 }
 
+// The playlist-name sidebar list stays a plain (unvirtualized) list —
+// unlike everything else converted in this pass, it's always small and
+// user-curated, and virtualizing it would fight the *other* virtualized
+// list rendered right next to it (the selected playlist's tracks, via
+// TrackList below): the two sit side by side, not stacked, so they can't
+// both bind to the shared `.main-content` scroll container at once — only
+// TrackList (the one that can actually grow large) needs to.
 export function PlaylistPanel({ search, onSearch }: PlaylistPanelProps) {
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);

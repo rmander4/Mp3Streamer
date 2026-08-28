@@ -65,21 +65,35 @@ public static class LibraryEndpoints
             return Results.Ok(new PagedResult<TrackDto>(items, page, pageSize, totalCount));
         });
 
-        app.MapGet("/api/artists", async (LibraryDbContext db) =>
+        app.MapGet("/api/artists", async (LibraryDbContext db, string? search, int page = 1, int pageSize = 100) =>
         {
-            var trackCounts = await db.Tracks
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+            var grouped = db.Tracks
                 .Where(t => t.Artist != null)
                 .GroupBy(t => t.Artist)
-                .Select(g => new { Name = g.Key!, Count = g.Count() })
+                .Select(g => new { Name = g.Key!, Count = g.Count() });
+
+            if (!string.IsNullOrWhiteSpace(search))
+                grouped = grouped.Where(g => EF.Functions.Like(g.Name, $"%{search}%"));
+
+            var totalCount = await grouped.CountAsync();
+
+            var pageItems = await grouped
+                .OrderBy(g => g.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
+            var namesOnPage = pageItems.Select(p => p.Name).ToArray();
+
             // One representative track id per (Artist, Album) pair, for the
-            // frontend's small album-art stack next to each artist. Sent
-            // uncapped — the frontend shows up to 10 as a static row, or
-            // switches to a scrolling marquee beyond that, so it needs the
-            // full list either way rather than a server-side cap.
+            // frontend's small album-art stack next to each artist —
+            // restricted to just the artists on this page (not the whole
+            // library) now that this endpoint is paginated.
             var albumSamples = await db.Tracks
-                .Where(t => t.Artist != null && t.Album != null)
+                .Where(t => t.Artist != null && t.Album != null && namesOnPage.Contains(t.Artist))
                 .GroupBy(t => new { t.Artist, t.Album })
                 .Select(g => new { Artist = g.Key.Artist!, Album = g.Key.Album!, SampleTrackId = g.Min(t => t.Id) })
                 .ToListAsync();
@@ -90,27 +104,42 @@ public static class LibraryEndpoints
                     g => g.Key,
                     g => g.OrderBy(a => a.Album).Select(a => new AlbumArtDto(a.SampleTrackId, a.Album)).ToArray());
 
-            var artists = trackCounts
+            var artists = pageItems
                 .Select(a => new ArtistDto(a.Name, a.Count, albumArtByArtist.GetValueOrDefault(a.Name, [])))
-                .OrderBy(a => a.Name);
+                .ToList();
 
-            return Results.Ok(artists);
+            return Results.Ok(new PagedResult<ArtistDto>(artists, page, pageSize, totalCount));
         });
 
-        app.MapGet("/api/album-artists", async (LibraryDbContext db) =>
+        app.MapGet("/api/album-artists", async (LibraryDbContext db, string? search, int page = 1, int pageSize = 100) =>
         {
             // Same shape as /api/artists, but grouped by AlbumArtist (falling
             // back to Artist for tracks that never got one) instead of the
             // per-track Artist — mirrors how Albums are grouped, so a track
             // credited to "Band feat. Someone" still lands under "Band".
-            var trackCounts = await db.Tracks
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+            var grouped = db.Tracks
                 .Where(t => t.AlbumArtist != null || t.Artist != null)
                 .GroupBy(t => t.AlbumArtist ?? t.Artist)
-                .Select(g => new { Name = g.Key!, Count = g.Count() })
+                .Select(g => new { Name = g.Key!, Count = g.Count() });
+
+            if (!string.IsNullOrWhiteSpace(search))
+                grouped = grouped.Where(g => EF.Functions.Like(g.Name, $"%{search}%"));
+
+            var totalCount = await grouped.CountAsync();
+
+            var pageItems = await grouped
+                .OrderBy(g => g.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
+            var namesOnPage = pageItems.Select(p => p.Name).ToArray();
+
             var albumSamples = await db.Tracks
-                .Where(t => (t.AlbumArtist != null || t.Artist != null) && t.Album != null)
+                .Where(t => (t.AlbumArtist != null || t.Artist != null) && t.Album != null && namesOnPage.Contains(t.AlbumArtist ?? t.Artist))
                 .GroupBy(t => new { Artist = t.AlbumArtist ?? t.Artist, t.Album })
                 .Select(g => new { Artist = g.Key.Artist!, Album = g.Key.Album!, SampleTrackId = g.Min(t => t.Id) })
                 .ToListAsync();
@@ -121,36 +150,75 @@ public static class LibraryEndpoints
                     g => g.Key,
                     g => g.OrderBy(a => a.Album).Select(a => new AlbumArtDto(a.SampleTrackId, a.Album)).ToArray());
 
-            var albumArtists = trackCounts
+            var albumArtists = pageItems
                 .Select(a => new ArtistDto(a.Name, a.Count, albumArtByArtist.GetValueOrDefault(a.Name, [])))
-                .OrderBy(a => a.Name);
+                .ToList();
 
-            return Results.Ok(albumArtists);
+            return Results.Ok(new PagedResult<ArtistDto>(albumArtists, page, pageSize, totalCount));
         });
 
-        app.MapGet("/api/genres", async (LibraryDbContext db) =>
+        app.MapGet("/api/genres", async (LibraryDbContext db, string? search, int page = 1, int pageSize = 100) =>
         {
-            var genres = await db.Tracks
-                .Where(t => t.Genre != null)
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+            var query = db.Tracks.Where(t => t.Genre != null);
+            if (!string.IsNullOrWhiteSpace(search))
+                query = query.Where(t => EF.Functions.Like(t.Genre!, $"%{search}%"));
+
+            var grouped = query
                 .GroupBy(t => t.Genre)
-                .Select(g => new { Name = g.Key!, Count = g.Count() })
+                .Select(g => new { Name = g.Key!, Count = g.Count() });
+
+            var totalCount = await grouped.CountAsync();
+
+            var items = await grouped
+                .OrderBy(g => g.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
-            return Results.Ok(genres
-                .Select(g => new FacetDto(g.Name, g.Count))
-                .OrderBy(f => f.Name));
+
+            var genres = items.Select(g => new FacetDto(g.Name, g.Count));
+            return Results.Ok(new PagedResult<FacetDto>(genres.ToList(), page, pageSize, totalCount));
         });
 
-        app.MapGet("/api/albums", async (LibraryDbContext db) =>
+        app.MapGet("/api/albums", async (LibraryDbContext db, string? search, string? artist, string? sort, int page = 1, int pageSize = 100) =>
         {
-            var albums = await db.Tracks
-                .Where(t => t.Album != null)
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+            var query = db.Tracks.Where(t => t.Album != null);
+
+            if (!string.IsNullOrWhiteSpace(artist))
+                query = query.Where(t => (t.AlbumArtist ?? t.Artist) == artist);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = $"%{search}%";
+                query = query.Where(t => EF.Functions.Like(t.Album!, term) || EF.Functions.Like(t.Artist!, term));
+            }
+
+            var grouped = query
                 .GroupBy(t => new { t.Album, Artist = t.AlbumArtist ?? t.Artist })
-                .Select(g => new { g.Key.Album, g.Key.Artist, Count = g.Count(), SampleTrackId = g.Min(t => t.Id), Year = g.Min(t => t.Year) })
+                .Select(g => new { g.Key.Album, g.Key.Artist, Count = g.Count(), SampleTrackId = g.Min(t => t.Id), Year = g.Min(t => t.Year) });
+
+            var totalCount = await grouped.CountAsync();
+
+            // Nulls-last year ordering: bucket by "has a year" first (false
+            // sorts before true), then by the year itself — plain `OrderBy`
+            // on a nullable int would otherwise clump nulls at whichever end
+            // SQLite's default null ordering happens to put them.
+            var ordered = sort == "year"
+                ? grouped.OrderBy(a => a.Year == null).ThenBy(a => a.Year)
+                : grouped.OrderBy(a => a.Artist).ThenBy(a => a.Album);
+
+            var items = await ordered
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
-            return Results.Ok(albums
-                .Select(a => new AlbumDto(a.Album!, a.Artist, a.Count, a.SampleTrackId, a.Year))
-                .OrderBy(a => a.Artist)
-                .ThenBy(a => a.Album));
+
+            var albums = items.Select(a => new AlbumDto(a.Album!, a.Artist, a.Count, a.SampleTrackId, a.Year));
+            return Results.Ok(new PagedResult<AlbumDto>(albums.ToList(), page, pageSize, totalCount));
         });
 
         app.MapGet("/api/tracks/{id:int}/stream", async (int id, LibraryDbContext db, HttpContext context) =>

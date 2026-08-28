@@ -817,6 +817,14 @@
 }
 
 .album-card {
+  /* VirtuosoGrid wraps each item in its own div (the actual CSS grid
+     cell) — .album-card is now nested one level inside that wrapper
+     rather than being the grid cell itself, so it needs an explicit
+     width to still fill the column the way it did as a direct grid
+     child (grid's default `justify-items: stretch` no longer applies to
+     it directly). */
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -829,6 +837,22 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   user-select: none;
+}
+
+/* Gray placeholder shown in place of real content while the user scrolls
+   fast through a virtualized list/grid/table (react-virtuoso's
+   scrollSeekConfiguration) — same treatment across TrackList,
+   HistoryPanel, FacetList, and AlbumGrid (via .skeleton-card below). */
+.skeleton-row {
+  height: 20px;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+
+.skeleton-card {
+  border-radius: 8px;
+  background: var(--code-bg);
+  box-sizing: border-box;
 }
 
 .album-card:hover {

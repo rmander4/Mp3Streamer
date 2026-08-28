@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { TableVirtuoso, type ItemProps, type ScrollSeekPlaceholderProps } from 'react-virtuoso';
 import type { Track } from '../api/types';
 import { formatDuration } from '../utils/format';
 import { downloadUrl } from '../api/client';
@@ -7,6 +8,7 @@ import { DownloadIcon } from '../player/icons';
 import { TrackContextMenu, type ContextMenuItem } from './TrackContextMenu';
 import { EditTagsDialog } from './EditTagsDialog';
 import { EditTagsBulkDialog } from './EditTagsBulkDialog';
+import { useScrollParent } from '../hooks/useScrollParent';
 
 interface TrackListProps {
   tracks: Track[];
@@ -16,6 +18,12 @@ interface TrackListProps {
   onBulkTagsUpdated: (tracks: Track[]) => void;
   activeTrackId?: number;
   renderRowActions?: (track: Track, index: number) => ReactNode;
+  // Called as the user scrolls near the end of `tracks` — wired to a
+  // paged/infinite data source by the owning screen (App.tsx,
+  // PlaylistPanel). Omit it for an already-fully-loaded small list (a
+  // single playlist, a drilled-into album); the virtualized table works
+  // identically either way, it just never has anything left to load.
+  onLoadMore?: () => void;
 }
 
 // Matches the media query used elsewhere (e.g. NowPlayingBar) for "is this
@@ -42,6 +50,128 @@ function triggerDownload(track: Track) {
   link.remove();
 }
 
+// react-virtuoso remounts the whole list whenever a `components` override's
+// function identity changes, so these must be stable module-level
+// references, not declared inside TrackList's render (see the
+// react-virtuoso README: "Ensure that the component definitions are not
+// declared inline... otherwise the [list] will remount with each render").
+// Per-render state (selection, active track, handlers) flows in through the
+// `context` prop instead of closures, since that's designed to change
+// every render without needing a new component reference.
+interface RowContext {
+  tracks: Track[];
+  selectedIds: Set<number>;
+  activeTrackId?: number;
+  columnCount: number;
+  renderRowActions?: (track: Track, index: number) => ReactNode;
+  onRate: (track: Track, rating: number) => void;
+  onRowClick: (index: number) => void;
+  onRowContextMenu: (e: React.MouseEvent, track: Track) => void;
+  onRowPointerDown: (e: React.PointerEvent, track: Track) => void;
+  onRowMouseDown: (e: React.MouseEvent, index: number, track: Track) => void;
+  onRowMouseOver: (e: React.MouseEvent, index: number) => void;
+  onClearLongPress: () => void;
+}
+
+function TrackTableEl(props: React.ComponentProps<'table'>) {
+  return <table {...props} className="track-list" />;
+}
+
+function TrackRow({ item: track, context, ...rowProps }: ItemProps<Track> & { context: RowContext }) {
+  const index = rowProps['data-index'];
+  const classNames = ['track-row'];
+  if (track.id === context.activeTrackId) classNames.push('active');
+  if (context.selectedIds.has(track.id)) classNames.push('selected');
+  if (track.isMissing) classNames.push('missing');
+
+  return (
+    <tr
+      {...rowProps}
+      className={classNames.join(' ')}
+      onClick={() => context.onRowClick(index)}
+      onContextMenu={(e) => context.onRowContextMenu(e, track)}
+      onPointerDown={(e) => context.onRowPointerDown(e, track)}
+      onPointerUp={context.onClearLongPress}
+      onPointerLeave={context.onClearLongPress}
+      onPointerCancel={context.onClearLongPress}
+      onMouseDown={(e) => context.onRowMouseDown(e, index, track)}
+      onMouseOver={(e) => context.onRowMouseOver(e, index)}
+    />
+  );
+}
+
+function RowScrollSeekPlaceholder({ height, context }: ScrollSeekPlaceholderProps & { context: RowContext }) {
+  return (
+    <tr style={{ height }}>
+      <td colSpan={context.columnCount}>
+        <div className="skeleton-row" />
+      </td>
+    </tr>
+  );
+}
+
+const trackTableComponents = {
+  Table: TrackTableEl,
+  TableRow: TrackRow,
+  ScrollSeekPlaceholder: RowScrollSeekPlaceholder,
+};
+
+function trackItemContent(index: number, track: Track, context: RowContext) {
+  return (
+    <>
+      <td className="col-number">{track.trackNumber ?? '-'}</td>
+      <td>
+        {track.title}
+        {track.isMissing ? <span className="missing-label"> (missing)</span> : null}
+        <div className="track-subtitle-mobile">
+          {track.artist ?? 'Unknown'} &middot; {track.album ?? 'Unknown'}
+        </div>
+      </td>
+      <td className="col-artist">{track.artist ?? 'Unknown'}</td>
+      <td className="col-album">{track.album ?? 'Unknown'}</td>
+      <td>{formatDuration(track.durationSeconds)}</td>
+      <td className="col-rating" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <StarRating rating={track.rating} onRate={(stars) => context.onRate(track, stars)} size={16} />
+      </td>
+      <td className="col-download" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <a
+          href={downloadUrl(track.id)}
+          download={`${track.title}.mp3`}
+          className="download-link"
+          aria-label={`Download ${track.title}`}
+        >
+          <DownloadIcon size={16} />
+        </a>
+      </td>
+      {context.renderRowActions ? (
+        <td className="row-actions" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          {context.renderRowActions(track, index)}
+        </td>
+      ) : null}
+    </>
+  );
+}
+
+function fixedHeaderContent(renderRowActions: boolean) {
+  return (
+    <tr>
+      <th className="col-number">#</th>
+      <th>Title</th>
+      <th className="col-artist">Artist</th>
+      <th className="col-album">Album</th>
+      <th>Duration</th>
+      <th className="col-rating">Rating</th>
+      <th className="col-download">Download</th>
+      {renderRowActions ? <th></th> : null}
+    </tr>
+  );
+}
+
+const scrollSeekConfiguration = {
+  enter: (velocity: number) => Math.abs(velocity) > 500,
+  exit: (velocity: number) => Math.abs(velocity) < 20,
+};
+
 export function TrackList({
   tracks,
   onPlay,
@@ -50,7 +180,9 @@ export function TrackList({
   onBulkTagsUpdated,
   activeTrackId,
   renderRowActions,
+  onLoadMore,
 }: TrackListProps) {
+  const scrollParent = useScrollParent();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClick = useRef(false);
   const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | null>(null);
@@ -130,13 +262,13 @@ export function TrackList({
     setSelectedIds(new Set(tracks.slice(lo, hi + 1).map((t) => t.id)));
   };
 
-  const handleRowClick = (tracksForRow: Track[], index: number) => {
+  const handleRowClick = (index: number) => {
     if (suppressClick.current) {
       suppressClick.current = false;
       return;
     }
-    if (tracksForRow[index].isMissing) return; // file's gone — nothing to stream
-    onPlay(tracksForRow, index);
+    if (tracks[index].isMissing) return; // file's gone — nothing to stream
+    onPlay(tracks, index);
   };
 
   const handleRowContextMenu = (e: React.MouseEvent, track: Track) => {
@@ -168,87 +300,34 @@ export function TrackList({
     });
   };
 
+  const rowContext: RowContext = {
+    tracks,
+    selectedIds,
+    activeTrackId,
+    columnCount: 7 + (renderRowActions ? 1 : 0),
+    renderRowActions,
+    onRate,
+    onRowClick: handleRowClick,
+    onRowContextMenu: handleRowContextMenu,
+    onRowPointerDown: handleRowPointerDown,
+    onRowMouseDown: handleRowMouseDown,
+    onRowMouseOver: handleRowMouseOver,
+    onClearLongPress: clearLongPress,
+  };
+
   return (
     <>
-      <table className="track-list">
-        <thead>
-          <tr>
-            <th className="col-number">#</th>
-            <th>Title</th>
-            <th className="col-artist">Artist</th>
-            <th className="col-album">Album</th>
-            <th>Duration</th>
-            <th className="col-rating">Rating</th>
-            <th className="col-download">Download</th>
-            {renderRowActions ? <th></th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {tracks.map((track, index) => {
-            const classNames = ['track-row'];
-            if (track.id === activeTrackId) classNames.push('active');
-            if (selectedIds.has(track.id)) classNames.push('selected');
-            if (track.isMissing) classNames.push('missing');
-
-            return (
-              <tr
-                key={track.id}
-                className={classNames.join(' ')}
-                onClick={() => handleRowClick(tracks, index)}
-                onContextMenu={(e) => handleRowContextMenu(e, track)}
-                onPointerDown={(e) => handleRowPointerDown(e, track)}
-                onPointerUp={clearLongPress}
-                onPointerLeave={clearLongPress}
-                onPointerCancel={clearLongPress}
-                onMouseDown={(e) => handleRowMouseDown(e, index, track)}
-                onMouseOver={(e) => handleRowMouseOver(e, index)}
-              >
-                <td className="col-number">{track.trackNumber ?? '-'}</td>
-                <td>
-                  {track.title}
-                  {track.isMissing ? <span className="missing-label"> (missing)</span> : null}
-                  <div className="track-subtitle-mobile">
-                    {track.artist ?? 'Unknown'} &middot; {track.album ?? 'Unknown'}
-                  </div>
-                </td>
-                <td className="col-artist">{track.artist ?? 'Unknown'}</td>
-                <td className="col-album">{track.album ?? 'Unknown'}</td>
-                <td>{formatDuration(track.durationSeconds)}</td>
-                <td
-                  className="col-rating"
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  <StarRating rating={track.rating} onRate={(stars) => onRate(track, stars)} size={16} />
-                </td>
-                <td
-                  className="col-download"
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  <a
-                    href={downloadUrl(track.id)}
-                    download={`${track.title}.mp3`}
-                    className="download-link"
-                    aria-label={`Download ${track.title}`}
-                  >
-                    <DownloadIcon size={16} />
-                  </a>
-                </td>
-                {renderRowActions ? (
-                  <td
-                    className="row-actions"
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    {renderRowActions(track, index)}
-                  </td>
-                ) : null}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <TableVirtuoso
+        data={tracks}
+        context={rowContext}
+        customScrollParent={scrollParent ?? undefined}
+        components={trackTableComponents}
+        fixedHeaderContent={() => fixedHeaderContent(!!renderRowActions)}
+        itemContent={trackItemContent}
+        endReached={() => onLoadMore?.()}
+        increaseViewportBy={{ top: 300, bottom: 300 }}
+        scrollSeekConfiguration={scrollSeekConfiguration}
+      />
 
       {contextMenu ? (
         <TrackContextMenu

@@ -1,12 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Virtuoso, type ItemProps, type ListProps, type ScrollSeekPlaceholderProps } from 'react-virtuoso';
 import type { AlbumArt, Facet } from '../api/types';
 import { artworkUrl } from '../api/client';
+import { useScrollParent } from '../hooks/useScrollParent';
 
 interface FacetListProps {
   facets: Facet[];
   onSelect: (name: string) => void;
   onSelectAlbum?: (album: string, artist: string) => void;
+  // Called as the user scrolls near the end of `facets` — wired to a
+  // paged/infinite data source by App.tsx. Omit for an already-complete
+  // small list.
+  onLoadMore?: () => void;
 }
 
 interface AlbumArtStackProps {
@@ -206,24 +212,66 @@ function MarqueeStack({ albumArt, renderThumb }: MarqueeStackProps) {
   );
 }
 
-export function FacetList({ facets, onSelect, onSelectAlbum }: FacetListProps) {
+// Stable module-level references — react-virtuoso remounts the list
+// whenever a `components` override's function identity changes, so these
+// can't be declared inside FacetList's render (see the react-virtuoso
+// README). Nothing here needs per-render state, so no `context` plumbing
+// is required — `onSelect`/`onSelectAlbum` are closed over directly by the
+// plain `itemContent` callback below instead, which isn't a mounted
+// component and so isn't subject to the same remount rule.
+const FacetListEl = forwardRef<HTMLDivElement, ListProps>(({ children, ...rest }, ref) => (
+  <ul ref={ref as unknown as React.Ref<HTMLUListElement>} className="facet-list" {...rest}>
+    {children}
+  </ul>
+));
+
+function FacetItemEl({ item: _item, ...rest }: ItemProps<Facet>) {
+  return <li {...rest} />;
+}
+
+function FacetScrollSeekPlaceholder({ height }: ScrollSeekPlaceholderProps) {
+  return (
+    <li style={{ height }}>
+      <div className="skeleton-row" />
+    </li>
+  );
+}
+
+const facetListComponents = {
+  List: FacetListEl,
+  Item: FacetItemEl,
+  ScrollSeekPlaceholder: FacetScrollSeekPlaceholder,
+};
+
+const facetScrollSeekConfiguration = {
+  enter: (velocity: number) => Math.abs(velocity) > 500,
+  exit: (velocity: number) => Math.abs(velocity) < 20,
+};
+
+export function FacetList({ facets, onSelect, onSelectAlbum, onLoadMore }: FacetListProps) {
+  const scrollParent = useScrollParent();
+
   if (facets.length === 0) {
     return <p className="empty-state">Nothing found.</p>;
   }
 
   return (
-    <ul className="facet-list">
-      {facets.map((f) => (
-        <li key={f.name}>
-          <button className="facet-item" onClick={() => onSelect(f.name)}>
-            <span>{f.name}</span>
-            {f.albumArt && onSelectAlbum ? (
-              <AlbumArtStack albumArt={f.albumArt} artist={f.name} onSelectAlbum={onSelectAlbum} />
-            ) : null}
-            <span className="facet-count">{f.trackCount}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <Virtuoso
+      data={facets}
+      customScrollParent={scrollParent ?? undefined}
+      components={facetListComponents}
+      itemContent={(_index, f) => (
+        <button className="facet-item" onClick={() => onSelect(f.name)}>
+          <span>{f.name}</span>
+          {f.albumArt && onSelectAlbum ? (
+            <AlbumArtStack albumArt={f.albumArt} artist={f.name} onSelectAlbum={onSelectAlbum} />
+          ) : null}
+          <span className="facet-count">{f.trackCount}</span>
+        </button>
+      )}
+      endReached={() => onLoadMore?.()}
+      increaseViewportBy={{ top: 300, bottom: 300 }}
+      scrollSeekConfiguration={facetScrollSeekConfiguration}
+    />
   );
 }

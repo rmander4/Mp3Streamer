@@ -16,7 +16,8 @@ import {
   fetchTracks,
   setTrackRating,
 } from './api/client';
-import type { Album, Facet, PlaylistSummary, Track } from './api/types';
+import type { Album, Facet, PagedResult, PlaylistSummary, Track } from './api/types';
+import { useInfinitePages } from './hooks/useInfinitePages';
 import { usePlayer } from './player/PlayerContext';
 import { NowPlayingBar } from './player/NowPlayingBar';
 import { ResumePrompt } from './player/ResumePrompt';
@@ -46,6 +47,15 @@ function getSavedAlbumSort(): AlbumSort {
   return saved === 'year' ? 'year' : 'name';
 }
 
+// Every list/grid screen now fetches its data a page at a time (see
+// useInfinitePages) instead of loading the entire result set up front —
+// necessary once a library reaches the tens of thousands of albums/
+// hundreds of thousands of tracks scale, where "fetch everything" would
+// mean multi-hundred-thousand-row JSON payloads before anything can even
+// render. Each hook below is only ever *actually* hitting the network
+// while its own tab is the active view — see each `fetchPage` guard.
+const EMPTY_PAGE = <T,>(page: number, pageSize: number): PagedResult<T> => ({ items: [], page, pageSize, totalCount: 0 });
+
 function App() {
   const [view, setView] = useState<ViewKey>(getSavedView);
   const [search, setSearch] = useState('');
@@ -58,17 +68,8 @@ function App() {
   const [albumsArtistFilter, setAlbumsArtistFilter] = useState<string | null>(null);
   const [albumsFilterSource, setAlbumsFilterSource] = useState<ViewKey | null>(null);
 
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [artists, setArtists] = useState<Facet[]>([]);
-  const [albumArtists, setAlbumArtists] = useState<Facet[]>([]);
-  const [genres, setGenres] = useState<Facet[]>([]);
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [albumPageSize, setAlbumPageSize] = useState(50);
-  const [albumPage, setAlbumPage] = useState(1);
   const [albumSort, setAlbumSort] = useState<AlbumSort>(getSavedAlbumSort);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSelectView = useCallback((next: ViewKey) => {
     setView(next);
@@ -85,64 +86,65 @@ function App() {
     fetchPlaylists().then(setPlaylists);
   }, []);
 
-  useEffect(() => {
-    setError(null);
-    if (view === 'albumArtists' && !drillDown) {
-      fetchAlbumArtists().then(setAlbumArtists).catch((e) => setError(String(e)));
-    } else if (view === 'artists' && !drillDown) {
-      fetchArtists().then(setArtists).catch((e) => setError(String(e)));
-    } else if (view === 'genres' && !drillDown) {
-      fetchGenres().then(setGenres).catch((e) => setError(String(e)));
-    } else if (view === 'albums' && !drillDown) {
-      fetchAlbums().then(setAlbums).catch((e) => setError(String(e)));
-    }
-  }, [view, drillDown]);
-
-  useEffect(() => {
-    setAlbumPage(1);
-  }, [sectionSearch, albumSort]);
-
   const handleAlbumSortChange = (next: AlbumSort) => {
     setAlbumSort(next);
     localStorage.setItem(SAVED_ALBUM_SORT_KEY, next);
   };
 
-  useEffect(() => {
-    const showTrackList = view === 'all' || drillDown !== null;
-    if (!showTrackList) return;
+  const showTrackList = view === 'all' || drillDown !== null;
 
-    // Cancels the previous in-flight search whenever a new one starts —
-    // without this, a slow search (large libraries especially: the
-    // %term% pattern can't use an index, so it's a full table scan) can
-    // resolve *after* a more recent one, repeatedly overwriting fresh
-    // results with stale ones and flickering the loading state on/off as
-    // each request independently finishes. Ryan's small library resolves
-    // fast enough that the race window is basically never hit; on his
-    // brother's ~285k-track library it reproduced every time (2026-08-24).
-    const controller = new AbortController();
+  const tracksPages = useInfinitePages<Track>(
+    (page, signal) =>
+      showTrackList
+        ? fetchTracks(
+            {
+              search: search || undefined,
+              album: drillDown?.kind === 'album' ? drillDown.value : undefined,
+              albumArtist: drillDown?.kind === 'album' ? (drillDown.artist ?? undefined) : undefined,
+              genre: drillDown?.kind === 'genre' ? drillDown.value : undefined,
+              page,
+              pageSize: 100,
+            },
+            signal,
+          )
+        : Promise.resolve(EMPTY_PAGE<Track>(page, 100)),
+    [view, drillDown, search],
+  );
 
-    setLoading(true);
-    setError(null);
-    fetchTracks(
-      {
-        search: search || undefined,
-        album: drillDown?.kind === 'album' ? drillDown.value : undefined,
-        albumArtist: drillDown?.kind === 'album' ? (drillDown.artist ?? undefined) : undefined,
-        genre: drillDown?.kind === 'genre' ? drillDown.value : undefined,
-      },
-      controller.signal,
-    )
-      .then((result) => setTracks(result.items))
-      .catch((e) => {
-        if (e?.name === 'AbortError') return;
-        setError(String(e));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+  const artistsPages = useInfinitePages<Facet>(
+    (page, signal) =>
+      view === 'artists' && !drillDown
+        ? fetchArtists({ search: sectionSearch || undefined, page, pageSize: 100 }, signal)
+        : Promise.resolve(EMPTY_PAGE<Facet>(page, 100)),
+    [view, drillDown, sectionSearch],
+  );
 
-    return () => controller.abort();
-  }, [view, drillDown, search]);
+  const albumArtistsPages = useInfinitePages<Facet>(
+    (page, signal) =>
+      view === 'albumArtists' && !drillDown
+        ? fetchAlbumArtists({ search: sectionSearch || undefined, page, pageSize: 100 }, signal)
+        : Promise.resolve(EMPTY_PAGE<Facet>(page, 100)),
+    [view, drillDown, sectionSearch],
+  );
+
+  const genresPages = useInfinitePages<Facet>(
+    (page, signal) =>
+      view === 'genres' && !drillDown
+        ? fetchGenres({ search: sectionSearch || undefined, page, pageSize: 100 }, signal)
+        : Promise.resolve(EMPTY_PAGE<Facet>(page, 100)),
+    [view, drillDown, sectionSearch],
+  );
+
+  const albumsPages = useInfinitePages<Album>(
+    (page, signal) =>
+      view === 'albums' && !drillDown
+        ? fetchAlbums(
+            { search: sectionSearch || undefined, artist: albumsArtistFilter ?? undefined, sort: albumSort, page, pageSize: 100 },
+            signal,
+          )
+        : Promise.resolve(EMPTY_PAGE<Album>(page, 100)),
+    [view, drillDown, sectionSearch, albumsArtistFilter, albumSort],
+  );
 
   const { playQueue, currentTrack, setCurrentTrackRating, setCurrentTrackFields } = usePlayer();
 
@@ -155,7 +157,7 @@ function App() {
 
   const handleRate = useCallback(
     (track: Track, rating: number) => {
-      setTracks((prev) => prev.map((t) => (t.id === track.id ? { ...t, rating } : t)));
+      tracksPages.updateItems((prev) => prev.map((t) => (t.id === track.id ? { ...t, rating } : t)));
       if (currentTrack?.id === track.id) {
         setCurrentTrackRating(rating);
       }
@@ -163,28 +165,28 @@ function App() {
         console.error('Failed to save rating', err);
       });
     },
-    [currentTrack, setCurrentTrackRating],
+    [currentTrack, setCurrentTrackRating, tracksPages],
   );
 
   const handleTagsUpdated = useCallback(
     (updated: Track) => {
-      setTracks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      tracksPages.updateItems((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
       if (currentTrack?.id === updated.id) {
         setCurrentTrackFields(updated);
       }
     },
-    [currentTrack, setCurrentTrackFields],
+    [currentTrack, setCurrentTrackFields, tracksPages],
   );
 
   const handleBulkTagsUpdated = useCallback(
     (updated: Track[]) => {
       const byId = new Map(updated.map((t) => [t.id, t]));
-      setTracks((prev) => prev.map((t) => byId.get(t.id) ?? t));
+      tracksPages.updateItems((prev) => prev.map((t) => byId.get(t.id) ?? t));
       if (currentTrack && byId.has(currentTrack.id)) {
         setCurrentTrackFields(byId.get(currentTrack.id)!);
       }
     },
-    [currentTrack, setCurrentTrackFields],
+    [currentTrack, setCurrentTrackFields, tracksPages],
   );
 
   const handleAddToPlaylist = useCallback((trackId: number, playlistId: number) => {
@@ -192,36 +194,12 @@ function App() {
     addTrackToPlaylist(playlistId, trackId).then(() => fetchPlaylists().then(setPlaylists));
   }, []);
 
-  const filteredAlbums = albums
-    .filter((album) => !albumsArtistFilter || album.artist === albumsArtistFilter)
-    .filter((album) => `${album.album} ${album.artist ?? ''}`.toLowerCase().includes(sectionSearch.toLowerCase()))
-    .sort((a, b) => {
-      // Name: the backend already returns albums ordered by artist then
-      // album name, and filtering preserves that order — nothing to do.
-      if (albumSort !== 'year') return 0;
-      // Year: undated albums sink to the end rather than clumping at
-      // whichever end Infinity/-Infinity would put them, since "unknown
-      // year" isn't meaningfully "earliest" or "latest".
-      if (a.year == null && b.year == null) return 0;
-      if (a.year == null) return 1;
-      if (b.year == null) return -1;
-      return a.year - b.year;
-    });
-  const albumPageCount = albumPageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredAlbums.length / albumPageSize));
-  const visibleAlbums = albumPageSize === 0
-    ? filteredAlbums
-    : filteredAlbums.slice((albumPage - 1) * albumPageSize, albumPage * albumPageSize);
-
   const renderContent = () => {
-    if (error) {
-      return <p className="error-state">{error}</p>;
-    }
-
     if (view === 'albumArtists' && !drillDown) {
-      const filteredAlbumArtists = albumArtists.filter((a) => a.name.toLowerCase().includes(sectionSearch.toLowerCase()));
+      if (albumArtistsPages.error) return <p className="error-state">{albumArtistsPages.error}</p>;
       return (
         <FacetList
-          facets={filteredAlbumArtists}
+          facets={albumArtistsPages.items}
           onSelect={(name) => {
             setAlbumsArtistFilter(name);
             setAlbumsFilterSource('albumArtists');
@@ -231,14 +209,15 @@ function App() {
             setView('albums');
             setDrillDown({ kind: 'album', value: album, artist });
           }}
+          onLoadMore={albumArtistsPages.loadMore}
         />
       );
     }
     if (view === 'artists' && !drillDown) {
-      const filteredArtists = artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase()));
+      if (artistsPages.error) return <p className="error-state">{artistsPages.error}</p>;
       return (
         <FacetList
-          facets={filteredArtists}
+          facets={artistsPages.items}
           onSelect={(name) => {
             setAlbumsArtistFilter(name);
             setAlbumsFilterSource('artists');
@@ -248,19 +227,28 @@ function App() {
             setView('albums');
             setDrillDown({ kind: 'album', value: album, artist });
           }}
+          onLoadMore={artistsPages.loadMore}
         />
       );
     }
     if (view === 'genres' && !drillDown) {
-      const filteredGenres = genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase()));
-      return <FacetList facets={filteredGenres} onSelect={(name) => setDrillDown({ kind: 'genre', value: name })} />;
+      if (genresPages.error) return <p className="error-state">{genresPages.error}</p>;
+      return (
+        <FacetList
+          facets={genresPages.items}
+          onSelect={(name) => setDrillDown({ kind: 'genre', value: name })}
+          onLoadMore={genresPages.loadMore}
+        />
+      );
     }
     if (view === 'albums' && !drillDown) {
+      if (albumsPages.error) return <p className="error-state">{albumsPages.error}</p>;
       return (
         <AlbumGrid
-          albums={visibleAlbums}
+          albums={albumsPages.items}
           onSelect={(album) => setDrillDown({ kind: 'album', value: album.album, artist: album.artist })}
-          onTracksEdited={() => fetchAlbums().then(setAlbums).catch((e) => setError(String(e)))}
+          onTracksEdited={() => albumsPages.reload()}
+          onLoadMore={albumsPages.loadMore}
         />
       );
     }
@@ -271,16 +259,21 @@ function App() {
       return <HistoryPanel />;
     }
 
+    if (tracksPages.error) {
+      return <p className="error-state">{tracksPages.error}</p>;
+    }
+
     return (
       <>
-        {loading ? <p className="loading-state">Loading...</p> : null}
+        {tracksPages.loading && tracksPages.items.length === 0 ? <p className="loading-state">Loading...</p> : null}
         <TrackList
-          tracks={tracks}
+          tracks={tracksPages.items}
           onPlay={handlePlay}
           onRate={handleRate}
           onTagsUpdated={handleTagsUpdated}
           onBulkTagsUpdated={handleBulkTagsUpdated}
           activeTrackId={currentTrack?.id}
+          onLoadMore={tracksPages.loadMore}
           renderRowActions={
             playlists.length > 0
               ? (track) => (
@@ -305,6 +298,15 @@ function App() {
       </>
     );
   };
+
+  const sectionMatchCount =
+    view === 'albumArtists'
+      ? albumArtistsPages.totalCount
+      : view === 'artists'
+        ? artistsPages.totalCount
+        : view === 'albums'
+          ? albumsPages.totalCount
+          : genresPages.totalCount;
 
   return (
     <div className="app-shell">
@@ -332,59 +334,19 @@ function App() {
             {view !== 'all' && !drillDown && view !== 'playlists' && view !== 'history' ? (
               <div className="section-search-row">
                 <SearchBar onSearch={setSectionSearch} placeholder={`Search ${view === 'albumArtists' ? 'album artists' : view}...`} />
-                {sectionSearch.trim() ? (
-                  <span className="search-match-count">
-                    {view === 'albumArtists'
-                      ? albumArtists.filter((a) => a.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
-                      : view === 'artists'
-                        ? artists.filter((artist) => artist.name.toLowerCase().includes(sectionSearch.toLowerCase())).length
-                        : view === 'albums'
-                          ? filteredAlbums.length
-                          : genres.filter((genre) => genre.name.toLowerCase().includes(sectionSearch.toLowerCase())).length}{' '}
-                    matches
-                  </span>
-                ) : null}
+                {sectionSearch.trim() ? <span className="search-match-count">{sectionMatchCount} matches</span> : null}
                 {view === 'albums' ? (
-                  <>
-                    <label className="album-page-size">
-                      <span>Sort</span>
-                      <select
-                        value={albumSort}
-                        onChange={(event) => handleAlbumSortChange(event.target.value as AlbumSort)}
-                        aria-label="Sort albums by"
-                      >
-                        <option value="name">Name</option>
-                        <option value="year">Year</option>
-                      </select>
-                    </label>
-                    <label className="album-page-size">
-                      <span>Show</span>
-                      <select
-                        value={albumPageSize}
-                        onChange={(event) => {
-                          setAlbumPageSize(Number(event.target.value));
-                          setAlbumPage(1);
-                        }}
-                        aria-label="Albums per page"
-                      >
-                        <option value={20}>20</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                        <option value={0}>All</option>
-                      </select>
-                    </label>
-                    {albumPageSize !== 0 ? (
-                      <>
-                        <button className="page-button" onClick={() => setAlbumPage((page) => Math.max(1, page - 1))} disabled={albumPage === 1} aria-label="Previous album page">
-                          &larr;
-                        </button>
-                        <span className="page-status">{albumPage} / {albumPageCount}</span>
-                        <button className="page-button" onClick={() => setAlbumPage((page) => Math.min(albumPageCount, page + 1))} disabled={albumPage === albumPageCount} aria-label="Next album page">
-                          &rarr;
-                        </button>
-                      </>
-                    ) : null}
-                  </>
+                  <label className="album-page-size">
+                    <span>Sort</span>
+                    <select
+                      value={albumSort}
+                      onChange={(event) => handleAlbumSortChange(event.target.value as AlbumSort)}
+                      aria-label="Sort albums by"
+                    >
+                      <option value="name">Name</option>
+                      <option value="year">Year</option>
+                    </select>
+                  </label>
                 ) : null}
               </div>
             ) : null}
