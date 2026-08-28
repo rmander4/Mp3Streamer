@@ -14,6 +14,30 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-28 — Ryan (2)
+
+- Fixed the landscape Now Playing Screen art (enlarged earlier the same
+  day, see entry below) touching the bottom of the screen with a gap
+  left at the top instead of being centered — Ryan spotted this from a
+  follow-up screenshot right after the enlarge shipped. Root cause:
+  `.fullscreen-main` sized itself against `.fullscreen-player`'s *full*
+  height, but `.fullscreen-header` is a real sibling above it that also
+  consumes real space (48px: 16px player padding + 28px button height +
+  4px margin) with nothing reserved to match at the bottom — so the
+  layout was never actually symmetric even though it looked like it
+  should be. Two earlier fix attempts along the way each broke something
+  else: taking the header out of flow (`position: absolute`) centered
+  the art correctly but let it float over the seek bar at short viewport
+  heights; switching `.fullscreen-main` to `flex: 1` fixed that overlap
+  but reintroduced the original asymmetric-gap bug. Landed on: keep the
+  header a normal in-flow sibling (avoids the overlap), and mirror its
+  48px footprint as `.fullscreen-player`'s *bottom* padding, so
+  `.fullscreen-main` sits between two equal margins instead of one real
+  one (the header) and one padding-only one. Verified via precise
+  `getBoundingClientRect()` checks (not just eyeballing screenshots) at
+  568×320, 640×360, and 700×420: `gapAbove == gapBelow` at all three, and
+  the header buttons never overlap the seek row at any of them.
+
 ## 2026-08-28 — Ryan (1)
 
 - Enlarged the Now Playing Screen's album art in the landscape mobile
