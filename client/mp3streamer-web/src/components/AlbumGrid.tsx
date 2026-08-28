@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { VirtuosoGrid, type GridScrollSeekPlaceholderProps } from 'react-virtuoso';
 import type { Album, Track } from '../api/types';
 import { artworkUrl, fetchTracks } from '../api/client';
 import { TrackContextMenu, type ContextMenuItem } from './TrackContextMenu';
 import { EditTagsBulkDialog } from './EditTagsBulkDialog';
+import { useScrollParent } from '../hooks/useScrollParent';
 
 // Pixels/second the text travels — tuned to be readable, not distracting.
 const LABEL_MARQUEE_PX_PER_SECOND = 30;
@@ -55,6 +57,9 @@ interface AlbumGridProps {
   albums: Album[];
   onSelect: (album: Album) => void;
   onTracksEdited?: () => void;
+  // Called as the user scrolls near the end of `albums` — wired to a
+  // paged/infinite data source by App.tsx.
+  onLoadMore?: () => void;
 }
 
 // Same gestures/constants TrackList.tsx uses for its own right-click /
@@ -65,7 +70,23 @@ const MOBILE_QUERY = '(pointer: coarse), (max-width: 700px)';
 const COARSE_POINTER_QUERY = '(pointer: coarse)';
 const LONG_PRESS_MS = 550;
 
-export function AlbumGrid({ albums, onSelect, onTracksEdited }: AlbumGridProps) {
+// Stable module-level reference — react-virtuoso remounts the grid whenever
+// a `components` override's function identity changes, so this can't be
+// declared inside AlbumGrid's render (see the react-virtuoso README).
+// Doesn't need per-render state, so no `context` plumbing required here.
+function GridScrollSeekPlaceholder({ height, width }: GridScrollSeekPlaceholderProps) {
+  return <div className="album-card skeleton-card" style={{ height, width }} />;
+}
+
+const gridComponents = { ScrollSeekPlaceholder: GridScrollSeekPlaceholder };
+
+const gridScrollSeekConfiguration = {
+  enter: (velocity: number) => Math.abs(velocity) > 500,
+  exit: (velocity: number) => Math.abs(velocity) < 20,
+};
+
+export function AlbumGrid({ albums, onSelect, onTracksEdited, onLoadMore }: AlbumGridProps) {
+  const scrollParent = useScrollParent();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClick = useRef(false);
   const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | null>(null);
@@ -131,10 +152,14 @@ export function AlbumGrid({ albums, onSelect, onTracksEdited }: AlbumGridProps) 
 
   return (
     <>
-      <div className="album-grid">
-        {albums.map((album) => (
+      <VirtuosoGrid
+        data={albums}
+        customScrollParent={scrollParent ?? undefined}
+        listClassName="album-grid"
+        computeItemKey={(_index, album) => `${album.artist}-${album.album}`}
+        components={gridComponents}
+        itemContent={(_index, album) => (
           <button
-            key={`${album.artist}-${album.album}`}
             className="album-card"
             onClick={() => handleCardClick(album)}
             onContextMenu={(e) => handleCardContextMenu(e, album)}
@@ -153,8 +178,11 @@ export function AlbumGrid({ albums, onSelect, onTracksEdited }: AlbumGridProps) 
             <MarqueeLabel className="album-card-title" text={album.album} />
             <MarqueeLabel className="album-card-artist" text={album.artist ?? 'Unknown Artist'} />
           </button>
-        ))}
-      </div>
+        )}
+        endReached={() => onLoadMore?.()}
+        increaseViewportBy={{ top: 300, bottom: 300 }}
+        scrollSeekConfiguration={gridScrollSeekConfiguration}
+      />
 
       {contextMenu ? (
         <TrackContextMenu
