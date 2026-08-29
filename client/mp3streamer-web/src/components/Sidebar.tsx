@@ -7,7 +7,7 @@ export type ViewKey = 'all' | 'albumArtists' | 'artists' | 'albums' | 'genres' |
 
 const VIEWS: { key: ViewKey; label: string }[] = [
   { key: 'all', label: 'All Tracks' },
-  { key: 'albumArtists', label: 'Album Artist' },
+  { key: 'albumArtists', label: 'Album Artists' },
   { key: 'artists', label: 'Artists' },
   { key: 'albums', label: 'Albums' },
   { key: 'genres', label: 'Genres' },

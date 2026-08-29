@@ -208,9 +208,14 @@ public static class LibraryEndpoints
             // sorts before true), then by the year itself — plain `OrderBy`
             // on a nullable int would otherwise clump nulls at whichever end
             // SQLite's default null ordering happens to put them.
+            // "Name" sort is by Album title itself, not grouped by artist
+            // first — this is the general, unfiltered Albums tab, where
+            // browsing alphabetically by album name is the point (an
+            // artist-filtered view, from drilling into one Artist/Album
+            // Artist, defaults to the "year" branch above instead).
             var ordered = sort == "year"
-                ? grouped.OrderBy(a => a.Year == null).ThenBy(a => a.Year)
-                : grouped.OrderBy(a => a.Artist).ThenBy(a => a.Album);
+                ? grouped.OrderBy(a => a.Year == null).ThenBy(a => a.Year).ThenBy(a => a.Album)
+                : grouped.OrderBy(a => a.Album).ThenBy(a => a.Artist);
 
             var items = await ordered
                 .Skip((page - 1) * pageSize)

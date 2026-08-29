@@ -204,6 +204,7 @@ function App() {
             setAlbumsArtistFilter(name);
             setAlbumsFilterSource('albumArtists');
             setView('albums');
+            setAlbumSort('year');
           }}
           onSelectAlbum={(album, artist) => {
             setView('albums');
@@ -222,6 +223,7 @@ function App() {
             setAlbumsArtistFilter(name);
             setAlbumsFilterSource('artists');
             setView('albums');
+            setAlbumSort('year');
           }}
           onSelectAlbum={(album, artist) => {
             setView('albums');
@@ -311,7 +313,13 @@ function App() {
   return (
     <div className="app-shell">
       <div className={`body-row${currentTrack ? ' has-now-playing' : ''}`}>
-        <Sidebar active={view} onSelect={handleSelectView} />
+        {/* Drilling from Artists/Album Artists into that artist's albums (and
+            further into one album's tracks) sets `view` to 'albums' for
+            content-routing purposes, but shouldn't visually move the
+            sidebar's highlight off the tab the user actually navigated
+            from — `albumsFilterSource` already tracks that for the
+            breadcrumb, so it doubles as the highlight source here too. */}
+        <Sidebar active={albumsArtistFilter ? (albumsFilterSource ?? view) : view} onSelect={handleSelectView} />
         <main className="main-content">
           <div className="content-header">
             {drillDown ? (
@@ -325,9 +333,10 @@ function App() {
                   setAlbumsArtistFilter(null);
                   setView(albumsFilterSource ?? 'artists');
                   setAlbumsFilterSource(null);
+                  setAlbumSort(getSavedAlbumSort());
                 }}
               >
-                &larr; Back to {albumsFilterSource === 'albumArtists' ? 'album artist' : 'artists'}
+                &larr; Back to {albumsFilterSource === 'albumArtists' ? 'album artists' : 'artists'}
               </button>
             ) : null}
             {view === 'all' || drillDown ? <SearchBar onSearch={setSearch} /> : null}

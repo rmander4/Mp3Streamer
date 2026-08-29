@@ -177,6 +177,11 @@ export function AlbumGrid({ albums, onSelect, onTracksEdited, onLoadMore }: Albu
             />
             <MarqueeLabel className="album-card-title" text={album.album} />
             <MarqueeLabel className="album-card-artist" text={album.artist ?? 'Unknown Artist'} />
+            {/* Always rendered (even blank) so every card in a row reserves
+                the same height whether or not its year is known — same
+                alignment reasoning as the single-line title/artist labels
+                above. */}
+            <div className="album-card-year">{album.year ?? null}</div>
           </button>
         )}
         endReached={() => onLoadMore?.()}
