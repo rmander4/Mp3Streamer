@@ -442,6 +442,58 @@ Worth knowing before you re-discover these the hard way:
   introduced. If a future native-control dark-mode issue shows up, reach
   for explicit `<option>`/similar styling before trusting `color-scheme`
   alone.
+- **react-virtuoso remounts an entire list/grid/table whenever a
+  `components` override's function *identity* changes between renders** —
+  documented in the library's own README ("Ensure that the component
+  definitions are not declared inline... otherwise the [list] will remount
+  with each render"), but easy to miss since it doesn't error, it just
+  silently defeats the point of virtualizing. `TrackList`/`HistoryPanel`/
+  `AlbumGrid`/`FacetList`/`PlaylistPanel` all define their `Table`/
+  `TableRow`/`List`/`Item`/`ScrollSeekPlaceholder` overrides as stable
+  module-level consts, not inline inside the component function. Per-render
+  state those overrides need (selection, active track, row click handlers)
+  flows in through react-virtuoso's `context` prop instead of closures —
+  see `RowContext` in `TrackList.tsx` for the pattern. Plain callback props
+  like `itemContent`/`fixedHeaderContent`/`scrollSeekConfiguration` are
+  **not** subject to this — they're invoked directly, not mounted as
+  component types, so closing over fresh per-render state there is fine
+  and is the normal pattern (react-virtuoso's own docs do exactly that).
+- **Two react-virtuoso instances can't both bind to the same
+  `customScrollParent` element if they sit side by side rather than
+  stacked.** Hit this in `PlaylistPanel.tsx`: the playlist-name sidebar
+  list and the selected playlist's `TrackList` render next to each other,
+  both wanting `.main-content` as their scroll container — but
+  `customScrollParent` assumes its Virtuoso instance owns that container's
+  scroll position, and two side-by-side instances computing virtualization
+  windows off the same shared scrollTop is wrong for either of them (they
+  occupy different vertical regions, not the same one). Fixed by leaving
+  the playlist-name list a plain unvirtualized `<ul>` (always small,
+  user-curated — doesn't need it) and only virtualizing the `TrackList`
+  next to it. If a future screen needs two independently-scrolling
+  virtualized lists side by side, each one needs its *own* bounded-height
+  container (CSS height, not `customScrollParent`) rather than sharing the
+  page's single scroll container.
+- **The Claude Browser pane tool doesn't run `ResizeObserver` callbacks at
+  all when the pane isn't actively displayed/compositing** — confirmed by
+  observing a real `screenshot` timeout error ("the Browser pane is not
+  displayed, so the page is not compositing frames") and then proving it
+  directly: a trivial isolated `ResizeObserver` on an unrelated test `div`
+  never fired either, not just react-virtuoso's internal ones. Since
+  react-virtuoso depends on `ResizeObserver` to measure the scroller/items
+  before it will render any rows, every virtualized list rendered exactly
+  zero rows in this tool despite correct data (`tracks.length` was
+  confirmed >0) and correct code — looked exactly like a real bug at
+  first. Diagnosed by temporarily passing `initialItemCount` (an
+  SSR-oriented prop that renders N items without waiting on measurement)
+  to confirm the *actual* component tree renders/behaves correctly once
+  given the chance — real data, click-to-play, star ratings, drill-down
+  navigation, and server-side search all verified working through that
+  workaround — then removed before considering the work done, since it
+  doesn't belong in shipped client-only code. If a future session hits
+  "virtualized list/grid renders nothing" while testing through this same
+  browser tool, suspect this environment quirk first — don't assume the
+  list code itself is broken, and don't ship an `initialItemCount`
+  workaround as if it were a real fix.
 
 ## Done since the original plan
 
@@ -710,6 +762,30 @@ Worth knowing before you re-discover these the hard way:
   clickable mid-scroll. Only needs JS to measure each label's own
   overflow once; the animation itself is a plain `@keyframes` +
   `animation-direction: alternate`.
+- ✅ Every list/grid screen is virtualized (`react-virtuoso`) and paginated
+  — necessary at Ryan's real library scale (~285k tracks, 3,000+ genre-tag
+  variants; his brother's is bigger still), where mounting every row into
+  the DOM at once isn't viable on mobile. `TrackList`/`HistoryPanel` use
+  `TableVirtuoso`, `AlbumGrid` uses `VirtuosoGrid`, `FacetList` uses plain
+  `Virtuoso` — all three attach to the existing `.main-content` scroll
+  container via `customScrollParent` (`hooks/useScrollParent.ts`) instead
+  of each wrapping its own nested scroller, so the sticky content-header
+  layout didn't need to change. Fast scrolling shows a gray placeholder
+  (`scrollSeekConfiguration` + `.skeleton-row`/`.skeleton-card`) rather
+  than real row content. Backend: `/api/artists`, `/api/album-artists`,
+  `/api/genres`, `/api/albums` gained `search`/`page`/`pageSize` and now
+  return `PagedResult<T>` like `/api/tracks` already did (previously
+  unpaginated, returning the entire table every request); `/api/albums`
+  also gained `artist`/`sort` params, replacing what used to be client-side
+  filtering/sorting over the full in-memory list. Frontend:
+  `hooks/useInfinitePages.ts` drives page-by-page fetching for all five
+  paginated sources. The Albums tab's old "Show" page-size dropdown +
+  Prev/Next pager is gone (inherently incompatible with infinite scroll);
+  Sort stays. See the react-virtuoso gotchas below — including a
+  Claude-Browser-pane-specific testing trap (`ResizeObserver` never fires
+  there since it doesn't composite frames when not displayed, which makes
+  every virtualized list render zero rows in that tool alone, regardless
+  of whether the code is actually correct) — before touching this again.
 
 ## Not built yet (future phases, roughly in the order discussed with Ryan)
 

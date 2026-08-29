@@ -320,7 +320,7 @@ export function TrackList({
       <TableVirtuoso
         data={tracks}
         context={rowContext}
-        style={{ height: 600 }}
+        customScrollParent={scrollParent ?? undefined}
         components={trackTableComponents}
         fixedHeaderContent={() => fixedHeaderContent(!!renderRowActions)}
         itemContent={trackItemContent}

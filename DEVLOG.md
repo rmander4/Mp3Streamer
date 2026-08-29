@@ -14,6 +14,84 @@ Newest entries go at the top.
 
 ---
 
+## 2026-08-29 — Ryan (catching up 08-28's commit, plus one fix)
+
+- **Every list/grid screen is now virtualized and paginated** — shipped
+  2026-08-28 (commit "Added progressive scrolling", merged to `main`) but
+  never got a DEVLOG entry, so this catches the record up. Driven by
+  Ryan's report that his real library (~285k tracks, thousands of artists,
+  3,000+ genre-tag variants — confirmed live against his actual running
+  database, not a synthetic test) was too much HTML for mobile browsers
+  to render: All Tracks, album/genre drill-downs, Artists, Album Artists,
+  Genres, Albums, a playlist's tracks, and History all used to fetch (or
+  in the facet/album endpoints' case, the backend used to *return*) the
+  entire result set and mount every row/card into the DOM at once.
+  A separate same-day Claude session had been working through this same
+  fix independently when Ryan's own session finished and pushed first —
+  converged on essentially identical code, which made reconciling the two
+  straightforward. One real bug found in the process: `TrackList.tsx`'s
+  `TableVirtuoso` had shipped with a leftover `style={{ height: 600 }}`
+  (an artifact of debugging around the Claude-Browser-pane
+  `ResizeObserver` quirk noted below) instead of `customScrollParent` —
+  every other converted component correctly attaches to the app's real
+  `.main-content` scroll container, but TrackList alone would have
+  rendered every screen that uses it (All Tracks, both drill-downs, a
+  playlist's tracks) inside a fixed 600px box with its own inner
+  scrollbar instead of filling the actual layout. Fixed to match the
+  others.
+  - New dependency: `react-virtuoso`. `TrackList`/`HistoryPanel` use
+    `TableVirtuoso` (keeps the real `<table>`/`<thead>`/`<tbody>` markup),
+    `AlbumGrid` uses `VirtuosoGrid`, `FacetList` (Artists/Album
+    Artists/Genres) uses plain `Virtuoso`. All three attach to the app's
+    existing `.main-content` scroll container via `customScrollParent`
+    (see new `hooks/useScrollParent.ts`) rather than each wrapping itself
+    in a nested scrollable div, so the sticky content-header layout didn't
+    need to change. Fast-scroll shows a gray placeholder block
+    (`scrollSeekConfiguration` + `.skeleton-row`/`.skeleton-card`) instead
+    of real row content, per Ryan's spec.
+  - The playlist-*name* sidebar list (`PlaylistPanel`) deliberately stayed
+    a plain unvirtualized list — it sits side-by-side with the (now
+    virtualized) selected-playlist track list, and two `Virtuoso`
+    instances can't both bind to the same shared scroll container at
+    once. Playlists are user-curated and never reach a scale that needs
+    it anyway.
+  - Backend: `/api/artists`, `/api/album-artists`, `/api/genres`,
+    `/api/albums` gained `search`/`page`/`pageSize` and now return
+    `PagedResult<T>` like `/api/tracks` already did — previously they had
+    *no* pagination at all and returned every row in one response. Fixed
+    along the way: the artist-page's album-art-thumbnail sample query used
+    to pull every `(Artist, Album)` pair in the whole library on every
+    request regardless of paging; it's now scoped to just the artists on
+    the current page. `/api/albums` gained `artist` and `sort` (name/year)
+    params, replacing what used to be a client-side filter/sort over the
+    full in-memory array.
+  - Frontend: new `hooks/useInfinitePages.ts` drives page-by-page fetching
+    for all five paginated sources, wired to each Virtuoso component's
+    `endReached`. Search/filter (`sectionSearch`, `albumsArtistFilter`,
+    `albumSort`) moved from instant client-side `.filter()`/`.sort()` over
+    a fully-loaded array to debounced server-side query params — same
+    pattern the main track search already used. The Albums tab's old
+    "Show" page-size dropdown + Prev/Next buttons are gone, replaced by
+    continuous infinite scroll (inherently incompatible with a
+    click-through pager); **Sort** stays.
+  - Side effect fix: "All Tracks" and the album/genre drill-down views
+    previously only ever fetched page 1 (100 tracks) with no way to load
+    more — invisible on a small library, a silent hard cap at real scale.
+    Now paginates properly via the same `useInfinitePages` hook.
+  - Testing note for a future session: this Claude Browser tool's pane
+    doesn't composite frames when not actively displayed, which means
+    `ResizeObserver` never fires in it — react-virtuoso depends on that to
+    measure item/container size, so every virtualized list rendered zero
+    rows in-tool despite correct data and correct code. Diagnosed by
+    temporarily adding `initialItemCount` (bypasses the measurement
+    probe) to prove the *code* was correct — confirmed real rendering,
+    click-to-play, star ratings, drill-down navigation, and server-side
+    search all work end-to-end once given the chance, then removed it
+    again before finishing (it's an SSR-oriented prop, not something that
+    belongs in the shipped client-only code). If a future session hits
+    "virtualized list renders nothing" in this same tool, suspect this
+    first rather than the list code itself.
+
 ## 2026-08-28 — Ryan (3)
 
 - Fixed a real bug this same day's testing caused: while verifying the
