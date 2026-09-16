@@ -14,7 +14,136 @@ Newest entries go at the top.
 
 ---
 
-## 2026-08-29 — Ryan (catching up 08-28's commit, plus one fix)
+## 2026-09-13 — Ryan (finishing Phase A/B from 2026-09-08)
+
+- Set up the `Mp3Streamer` Windows Service on the brother's machine (Phase 2
+  from the 2026-09-08 plan) — published, service created, started. First
+  startup ran the new `ItunesXmlWatcherService` sync as expected: backed up
+  `library.db` first (`library.pre-sync-backup.db`), then confirmed via a
+  throwaway read-only DB check (no `sqlite3` CLI on this box, so a scratch
+  `Microsoft.Data.Sqlite` console app) that the live DB went from 285,168
+  tracks (backup, as of the 08-29 import) to 287,241 (all still
+  `CatalogSource=ItunesXml`, zero missing, zero null titles) — a healthy net
+  +2,073 matching two weeks of real library growth, not a wipe.
+- **Found and fixed a real LAN-reachability bug**: the service worked fine
+  from the PC itself but not from a phone on the same Wi-Fi, even after the
+  `New-NetFirewallRule ... -Profile Private` rule from setup. Root cause:
+  this PC reaches the LAN over **wired Ethernet** (`192.168.1.58`), and
+  Windows had that connection's network profile categorized **Public** (the
+  profile is oddly named `Virus_Detected` — just a label, not a real
+  problem) — a `-Profile Private` firewall rule never applies on a
+  Public-categorized network, so it silently never took effect. Red herring
+  that briefly looked like a real counter-example: the Vite dev server on
+  port 5173 *did* work from the phone the whole time — not because
+  connectivity was fine, but because Windows had already granted `node.exe`
+  a broader, program-based firewall exception (from the one-time "Windows
+  Defender Firewall blocked some features of Node.js" popup) that
+  apparently covers Public networks, unlike our narrow port-based rule.
+  Fixed with `Set-NetConnectionProfile -InterfaceAlias Ethernet
+  -NetworkCategory Private` (the correct fix — this is genuinely a trusted
+  home LAN) rather than widening the firewall rule to `Profile Any`.
+  Confirmed working from the phone afterward. Also confirmed via
+  `Get-WinEvent -ProviderName Mp3Streamer` that the app has **no** Windows
+  Event Log logging configured — `UseWindowsService()` alone doesn't add an
+  `EventLog` provider, so that channel only ever shows the SCM's generic
+  "Service started successfully", never the app's own `ILogger` output.
+  Not fixed (no one's asked for it yet) — worth remembering if a future
+  session needs to check the running service's logs and finds Event Viewer
+  unexpectedly empty.
+- Next: the GitHub self-hosted-runner setup (Phase 3 / "GitHub auto-deploy")
+  is still pending, then a first commit + push.
+
+## 2026-09-08 — Ryan
+
+Three things: automatic iTunes-XML sync, on-access ID3 refresh, and a
+GitHub → this-PC auto-deploy pipeline. (This is the brother's machine —
+`CatalogSource: ItunesXml`, real iTunes, ~285k tracks, `E:\Music\HQ`,
+port 5288 — which up to now was run by hand, not as a service.)
+
+### Automatic iTunes Library XML sync (new `ItunesXmlWatcherService`)
+
+- A new `BackgroundService` in the API (not a separate exe — decided with
+  Ryan; simpler to operate, no cross-process SQLite contention) that watches
+  the real iTunes `iTunes Music Library.xml` and reconciles **track
+  add/remove** whenever iTunes rewrites it. Modeled on the existing
+  `LibraryWatcherService` (10s debounce, `SemaphoreSlim(1,1)` skip-if-running,
+  swallows its own exceptions) plus a `SyncIntervalMinutes` (default 15)
+  last-write-time safety poll for dropped FS events.
+- Only active when `CatalogSource == ItunesXml` and the new
+  `ItunesXml:LibraryXmlPath` setting is present (added to this machine's
+  gitignored `appsettings.json`; documented in `appsettings.json.example`).
+  In iTunes you must enable *Preferences → Advanced → "Share iTunes Library
+  XML with other applications"* for that file to exist/stay current.
+- **The real XML is treated as sacred — read-only, never touched.** Each sync
+  `File.Copy`s it to a private `%TEMP%\mp3streamer-itunes-<guid>.xml`, parses
+  the copy, deletes the copy. The original is only ever observed via
+  `FileSystemWatcher` (no handle) and a last-write-time stat. If the copy
+  fails (file mid-write) the sync logs and bails — it never opens the
+  original directly. Nothing (scanner, TagLibSharp, `dotnet ef`, the CI
+  workflow) is ever pointed at it.
+- Reuses the existing `ItunesXmlImporter` parser as-is. Added a
+  `removeMissing` flag: the watcher passes `true` (tracks gone from the XML
+  are **hard-deleted**, cascading to playlist membership + today's play
+  history — Ryan's call); the manual Settings import still passes `false`
+  (flags `IsMissing`, unchanged). `ImportResult` gained a `Removed` count.
+- Verified end-to-end against a scratch DB + a hand-written test XML on port
+  5299: startup sync imported 2, then editing the XML (drop one track, add
+  one) auto-triggered a sync that added the new row and hard-deleted the
+  removed one; temp copy cleaned up; original XML mtime untouched by the app.
+
+### On-access ID3 refresh (new `TrackMetadataRefresher` + `TrackTagMapper`)
+
+- Since the XML sync deliberately doesn't carry per-track metadata, each
+  track's tags are now re-read from the file the next time it's **streamed
+  or its artwork is fetched** — so edits made in any external tag editor
+  land. `GET /api/tracks/{id}/stream` and `.../artwork` call
+  `TrackMetadataRefresher.RefreshIfChangedAsync` (best-effort, never blocks
+  playback on a tag-read failure).
+- New `Track.FileModifiedUtc` column (migration `AddTrackFileModifiedUtc`)
+  stores the file's last-write time as of the last tag read. The common
+  "nothing changed" access is then a single `FileInfo` stat — no tag parse,
+  no DB write. `null` (e.g. an iTunes-XML row that's never been played)
+  forces one refresh on first access.
+- The tag→row field mapping that was inline+duplicated in `LibraryScanner`
+  is extracted to `TrackTagMapper.Apply(track, tagFile, fileInfo)` and shared
+  by the scanner and the refresher. No behavior change to the scanner.
+- Verified against a real MP3 copied into the scratchpad: first stream
+  rewrote title/artist/album/genre/track#/year/art/duration from the file
+  and cleared `IsMissing`; a second stream did no work; bumping the file's
+  mtime made the next stream refresh again.
+- **Bonus:** running `dotnet ef migrations add` surfaced that the committed
+  `LibraryDbContextModelSnapshot.cs` was missing the entire `PlaybackState`
+  entity — *that* was the long-standing `PendingModelChangesWarning`
+  false-positive flagged in `Program.cs` / DEVLOG 2026-08-23. The new
+  migration's regenerated snapshot includes it, and a probe
+  `migrations add` now comes back completely empty. The suppression in
+  `Program.cs` is left in place for now (harmless), but the underlying drift
+  is actually resolved. I did hand-strip a spurious `CreateTable("PlaybackState")`
+  the tool tried to put in the new migration's `Up()` (same false positive,
+  other direction) — the migration only adds the one column.
+
+### GitHub → this-PC auto-deploy (new `.github/workflows/deploy.yml`)
+
+- Every push to `main` (or a manual *Run workflow*) builds the frontend +
+  `dotnet publish`es the backend and redeploys to
+  `server/Mp3Streamer.Api/publish/` on this machine: backs up `library.db`,
+  stops the service, kills any stray `Mp3Streamer.Api` process, waits for
+  port 5288 to free, `robocopy /MIR` (excluding the gitignored per-machine
+  `appsettings.json`), starts the service, and health-checks
+  `http://localhost:5288` before declaring success. New EF migrations apply
+  themselves on service start.
+- **Requires a one-time self-hosted GitHub Actions runner** on this PC
+  (the only way GitHub reaches a LAN-only box), running as a service under
+  an account that can restart the Windows service. Setup steps are in
+  CLAUDE.md.
+- **Also requires the API to actually be a Windows Service on this machine
+  first** (it wasn't). Setup steps (unchanged from the code side — the
+  `UseWindowsService()` + `ContentRootPath` pin were already there) are in
+  CLAUDE.md.
+
+Backend + frontend both build clean. Not yet committed/pushed — and the
+runner + service setup below have to be done by hand (elevated PowerShell)
+before the first deploy.
 
 - **Every list/grid screen is now virtualized and paginated** — shipped
   2026-08-28 (commit "Added progressive scrolling", merged to `main`) but

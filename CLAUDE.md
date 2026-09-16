@@ -80,12 +80,26 @@ real album, and from a phone over the LAN):
 - `Services/LibraryWatcherService.cs` — `FileSystemWatcher`-based background
   service; runs one scan on startup, then rescans (debounced) whenever the
   library folders change, plus a periodic health check that reconnects any
-  watcher that's gone stale
+  watcher that's gone stale. Sits out iTunes-XML mode.
+- `Services/ItunesXmlWatcherService.cs` — the iTunes-XML-mode counterpart
+  (only runs when `CatalogSource == ItunesXml` + `ItunesXml:LibraryXmlPath`
+  set). Watches the real iTunes Library XML and reconciles **track
+  add/remove** (hard-delete) whenever iTunes rewrites it, via
+  `ItunesXmlImporter.ImportAsync(..., removeMissing: true)`. **Never touches
+  the real XML** — copies it to a temp file, parses the copy, deletes it.
+  See Key decisions below.
+- `Services/TrackTagMapper.cs` — the tag→`Track` field mapping shared by
+  `LibraryScanner` and `TrackMetadataRefresher` (file stays source of truth).
+- `Services/TrackMetadataRefresher.cs` — re-reads a track's ID3 tags from the
+  file on access (stream/artwork) when the file's last-write-time is newer
+  than `Track.FileModifiedUtc`; best-effort, never blocks playback
 - `Endpoints/LibraryEndpoints.cs` — `/api/tracks` (search/filter/paginate),
   `/api/artists`, `/api/albums`, `/api/genres` (facets),
-  `/api/tracks/{id}/stream` (range-enabled), `/api/tracks/{id}/download`
+  `/api/tracks/{id}/stream` (range-enabled; also triggers an on-access ID3
+  re-read via `TrackMetadataRefresher`), `/api/tracks/{id}/download`
   (attachment with a sanitized "Artist - Title.mp3" filename),
-  `/api/tracks/{id}/artwork`, `/api/tracks/{id}/rating` and
+  `/api/tracks/{id}/artwork` (also on-access ID3 re-read),
+  `/api/tracks/{id}/rating` and
   `/api/tracks/{id}/tags` (both write through to the file's actual ID3v2
   tag via TagLibSharp, then mirror into the DB — not DB-only),
   `/api/artwork/search` (proxies the free iTunes Search API for album art
@@ -342,6 +356,34 @@ Worth knowing before you re-discover these the hard way:
   `LibraryRootPaths` at a small copied subset of MP3s, same as the
   original version of this note said — that part was never actually
   done.
+- **The real iTunes Library XML is read-only and precious — never write to
+  it, lock it, move it, or run any command against it.** Ryan's brother's
+  instance points `ItunesXml:LibraryXmlPath` at a live iTunes install's
+  `iTunes Music Library.xml`. `ItunesXmlWatcherService` only ever observes it
+  via `FileSystemWatcher` (no open) + a last-write-time stat, and every sync
+  works off a byte-for-byte `%TEMP%` copy that's deleted afterward — the
+  original is never opened for anything but that one copy. If the copy fails
+  (file mid-write) the sync bails; it never falls back to the original. The
+  path is never added to `LibraryRootPaths`, never handed to TagLibSharp /
+  `dotnet ef` / the CI workflow. Keep it that way for anything that touches
+  this file.
+- **On-access ID3 refresh keeps metadata fresh without the catalog source
+  carrying it.** `TrackMetadataRefresher` (called from `/stream` + `/artwork`)
+  re-reads the file's tags into the DB row when
+  `FileInfo.LastWriteTimeUtc != Track.FileModifiedUtc`. The unchanged case is
+  a single stat — no tag parse, no write. This is why the iTunes XML sync
+  and `LibraryScanner` don't need to fight over per-field metadata: the file
+  wins, lazily, on next use. Shared mapping lives in `TrackTagMapper.Apply`.
+- **The committed model snapshot was missing `PlaybackState` entirely — that
+  was the `PendingModelChangesWarning` false positive.** Fixed as a side
+  effect of the `AddTrackFileModifiedUtc` migration (2026-09-08): its
+  regenerated `LibraryDbContextModelSnapshot.cs` includes `PlaybackState`,
+  and a probe `dotnet ef migrations add` now comes back empty. The
+  suppression in `Program.cs` is left in for now (harmless) but the drift is
+  actually gone. Note: `dotnet ef migrations add` on this repo still tries to
+  emit a spurious `CreateTable("PlaybackState")` in the *new* migration's
+  `Up()` — hand-strip that, keep only the real change (the table exists on
+  every DB already).
 - **No authentication in v1** — deliberate, since it's LAN-only. Don't wire
   up anything internet-facing without building auth first (see below).
 - **`PUT /api/tracks/{id}/artwork-from-url` validates its URL against a
@@ -497,6 +539,18 @@ Worth knowing before you re-discover these the hard way:
 
 ## Done since the original plan
 
+- ✅ Automatic iTunes-XML catalog sync (`ItunesXmlWatcherService`, 2026-09-08)
+  — for the brother's real-iTunes instance: watches `iTunes Music Library.xml`
+  and reconciles track add/remove (hard-delete) on every rewrite, treating
+  the XML as strictly read-only (temp-copy + parse the copy). See the
+  architecture + Key decisions entries above.
+- ✅ On-access ID3 refresh (`TrackMetadataRefresher`, 2026-09-08) — `/stream`
+  and `/artwork` re-read the file's tags into the DB when the file changed
+  since `Track.FileModifiedUtc`, so external tag edits land without the
+  catalog source carrying metadata.
+- ✅ GitHub → LAN-PC auto-deploy (`.github/workflows/deploy.yml`, 2026-09-08)
+  — push to `main` builds + redeploys + restarts the service on the
+  brother's machine via a self-hosted runner. See "GitHub auto-deploy" below.
 - ✅ Per-track 5-star ratings — persisted into the mp3's ID3v2 POPM frame
   (not just the DB), see `RatingMapper` and `PUT /api/tracks/{id}/rating`.
 - ✅ Automatic library updates via `LibraryWatcherService` — a
@@ -877,11 +931,14 @@ If you don't have a `library.db` yet either (brand new setup), just run the
 backend once — the migrations create an empty one — then copy it, or skip
 the copy and let `dotnet run` create `library.dev.db` fresh on first run.
 
-## Running as a Windows Service (Ryan's actual deployment, since 2026-08-18/19)
+## Running as a Windows Service (both machines)
 
-The backend runs permanently as a Windows Service named **`Mp3Streamer`** on
-Ryan's PC, rather than in a terminal — so it survives reboots and needs
-nothing running (no Claude Code, no open terminal) to stay up. Motivation,
+The backend runs permanently as a Windows Service named **`Mp3Streamer`** —
+on Ryan's PC since 2026-08-18/19, and on his brother's PC since 2026-09-08
+(same setup; that machine also got the GitHub auto-deploy pipeline below at
+the same time). It runs as a service rather than in a terminal so it
+survives reboots and needs nothing running (no Claude Code, no open
+terminal) to stay up. Motivation,
 verbatim (2026-08-18): "when I close Claude, I want to still access the
 website." Chose a plain Windows Service over IIS — IIS is for reverse-
 proxying multiple sites; this is one single self-hosted Kestrel app, so a
@@ -967,6 +1024,63 @@ background test instance was still holding the port, `Start-Service`
 "succeeded" but immediately reverted to Stopped; killing the stray process
 first fixed it. `Get-Service -Name "Mp3Streamer"` to check status;
 `Stop-Service`/`Start-Service`/`Restart-Service` all need elevation too.
+
+**If the service works from the host PC but not from another device on the
+LAN, even after adding the inbound firewall rule below: check the network's
+Windows category, not just the rule.** A port-scoped rule like
+`New-NetFirewallRule ... -Profile Private` only applies when Windows has
+categorized the active connection **Private** — if it's categorized
+**Public** (check with `Get-NetConnectionProfile`), the rule silently never
+applies, with no error anywhere. Hit this on the brother's machine
+(2026-09-13): its LAN connection is wired Ethernet, categorized Public
+(oddly named `Virus_Detected` — just a profile label). A misleading
+red herring made this look like it *wasn't* a firewall issue: the Vite dev
+server (port 5173) worked fine from a phone the whole time, but only
+because `node.exe` already had a broader, program-based firewall exception
+from an earlier one-time "Windows Defender Firewall blocked some features
+of Node.js" popup — unrelated to, and not evidence against, the
+narrower port-based block on 5288. Don't take "a different port already
+works from that same device" as proof the network/firewall is fine. Fix:
+`Set-NetConnectionProfile -InterfaceAlias <adapter> -NetworkCategory
+Private` (correct for a genuinely trusted home LAN) rather than widening
+the rule to `-Profile Any`.
+
+**The app has no Windows Event Log logging configured.**
+`UseWindowsService()` alone does not add an `EventLog` logger provider —
+`Get-WinEvent -ProviderName Mp3Streamer` only ever shows the Service
+Control Manager's own generic "Service started successfully" line, never
+the app's actual `ILogger` output. Confirmed while debugging the above (it
+looked like a promising way to check whether the iTunes sync had run; it
+wasn't). Not fixed — if a future session needs real log output from the
+running service, add `Microsoft.Extensions.Logging.EventLog` +
+`builder.Logging.AddEventLog()`, or check application behavior directly
+(hit the API, query the DB) instead of trusting Event Viewer to have
+anything.
+
+## GitHub auto-deploy (brother's machine, since 2026-09-08)
+
+On the brother's PC, the manual redeploy above is replaced by
+`.github/workflows/deploy.yml`: every push to `main` (or a manual *Run
+workflow*) builds the frontend + `dotnet publish`es the backend and
+redeploys to `server/Mp3Streamer.Api/publish/`, stopping the service +
+killing any stray `Mp3Streamer.Api` process + waiting for port 5288 first,
+then `robocopy /MIR` (excluding the gitignored `appsettings.json`), then
+`Start-Service` + an HTTP health check. `library.db` is copied to
+`library.backup.db` before each restart; new EF migrations self-apply on
+start.
+
+- **Runs on a self-hosted GitHub Actions runner** installed on that PC —
+  GitHub-hosted runners can't reach a LAN-only box. The runner is a Windows
+  service running under an account that can restart the `Mp3Streamer`
+  service (simplest: a local admin account).
+- The runner checks out its own fresh copy of the repo (under
+  `C:\actions-runner\_work\...`), which never contains the gitignored
+  per-machine `appsettings.json` — hence the `robocopy /XF appsettings.json`,
+  which preserves the one already sitting in `publish/`. **The first CI
+  deploy therefore requires a manual `dotnet publish` to have run once** so
+  `publish/appsettings.json` exists.
+- Ryan's machine deliberately does **not** have this yet — still the manual
+  `Restart-Service` flow above.
 
 ## Requirements
 

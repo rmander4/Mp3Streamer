@@ -226,11 +226,15 @@ public static class LibraryEndpoints
             return Results.Ok(new PagedResult<AlbumDto>(albums.ToList(), page, pageSize, totalCount));
         });
 
-        app.MapGet("/api/tracks/{id:int}/stream", async (int id, LibraryDbContext db, HttpContext context) =>
+        app.MapGet("/api/tracks/{id:int}/stream", async (int id, LibraryDbContext db, TrackMetadataRefresher refresher, HttpContext context, CancellationToken ct) =>
         {
             var track = await db.Tracks.FindAsync(id);
             if (track is null || !File.Exists(track.FilePath))
                 return Results.NotFound();
+
+            // Playing a track is the moment to reconcile any ID3 edits made
+            // outside this app (best-effort — never blocks playback).
+            await refresher.RefreshIfChangedAsync(track, ct);
 
             // Without this, the response had no Cache-Control at all (just
             // Last-Modified), which lets browsers heuristically cache full
@@ -358,11 +362,13 @@ public static class LibraryEndpoints
             return Results.Ok(updated);
         });
 
-        app.MapGet("/api/tracks/{id:int}/artwork", async (int id, LibraryDbContext db, HttpContext httpContext) =>
+        app.MapGet("/api/tracks/{id:int}/artwork", async (int id, LibraryDbContext db, TrackMetadataRefresher refresher, HttpContext httpContext, CancellationToken ct) =>
         {
             var track = await db.Tracks.FindAsync(id);
             if (track is null || !File.Exists(track.FilePath))
                 return Results.NotFound();
+
+            await refresher.RefreshIfChangedAsync(track, ct);
 
             // Picture existence must be checked *before* setting any cache
             // headers — setting Cache-Control unconditionally meant a

@@ -297,6 +297,9 @@ export function clearPlaybackState(): Promise<void> {
 export interface ItunesImportResult {
   imported: number;
   skipped: number;
+  // Only non-zero for the automatic background sync, which hard-deletes
+  // tracks no longer in the XML. The manual import here never removes.
+  removed?: number;
 }
 
 export function importItunesXml(

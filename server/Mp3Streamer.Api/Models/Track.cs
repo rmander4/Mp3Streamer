@@ -24,5 +24,13 @@ public class Track
     // to false if the file reappears at the same path on a later scan.
     public bool IsMissing { get; set; }
 
+    // Last-write timestamp of the file the last time we read its ID3 tags into
+    // this row. On a track access (stream/artwork), if the file on disk is
+    // newer than this, TrackMetadataRefresher re-reads the tags and updates
+    // the row — that's how tag edits made outside this app get picked up.
+    // Null means "never read from the file" (e.g. an iTunes-XML import), which
+    // forces a refresh on first access.
+    public DateTime? FileModifiedUtc { get; set; }
+
     public ICollection<PlaylistTrack> PlaylistTracks { get; set; } = new List<PlaylistTrack>();
 }

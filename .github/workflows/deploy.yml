@@ -1,0 +1,85 @@
+name: Deploy to home server
+
+# Builds the app and redeploys it to the LAN box on every push to main.
+# Runs on a self-hosted runner installed on that machine (GitHub-hosted
+# runners can't reach a LAN-only PC). See DEVLOG 2026-09-08 / CLAUDE.md
+# "GitHub auto-deploy" for the one-time runner + service setup.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}   # lets you run it by hand from the Actions tab
+
+concurrency:
+  group: deploy-home
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Build frontend
+        working-directory: client/mp3streamer-web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Stage frontend into wwwroot
+        shell: pwsh
+        run: |
+          $w = "server/Mp3Streamer.Api/wwwroot"
+          if (Test-Path $w) { Remove-Item $w -Recurse -Force }
+          New-Item -ItemType Directory -Force $w | Out-Null
+          Copy-Item "client/mp3streamer-web/dist/*" $w -Recurse -Force
+
+      - name: Publish backend
+        shell: pwsh
+        run: dotnet publish server/Mp3Streamer.Api/Mp3Streamer.Api.csproj -c Release -o "$env:RUNNER_TEMP/publish"
+
+      - name: Deploy and restart the service
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $live  = 'C:\Projects\Mp3Streamer\server\Mp3Streamer.Api\publish'
+          $dbDir = 'C:\Projects\Mp3Streamer\server\Mp3Streamer.Api\Database'
+
+          # Safety net: copy the live database aside before any restart
+          # (a new migration applies automatically on Start-Service).
+          if (Test-Path "$dbDir\library.db") {
+            Copy-Item "$dbDir\library.db" "$dbDir\library.backup.db" -Force
+          }
+
+          # Kill the running instance.
+          Stop-Service Mp3Streamer -ErrorAction SilentlyContinue
+          Get-Process Mp3Streamer.Api -ErrorAction SilentlyContinue | Stop-Process -Force
+          for ($i = 0; $i -lt 20 -and (Get-NetTCPConnection -LocalPort 5288 -State Listen -ErrorAction SilentlyContinue); $i++) {
+            Start-Sleep -Seconds 1
+          }
+
+          # Swap in the new build. /XF keeps this machine's gitignored,
+          # per-machine config (never present in the runner's checkout).
+          robocopy "$env:RUNNER_TEMP\publish" $live /MIR /XF appsettings.json appsettings.Development.json /NFL /NDL /NJH /NJS /R:3 /W:2
+          if ($LASTEXITCODE -ge 8) { throw "robocopy failed with code $LASTEXITCODE" }
+
+          # Bring it back up and confirm it actually serves.
+          Start-Service Mp3Streamer
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              if ((Invoke-WebRequest 'http://localhost:5288' -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200) {
+                Write-Host 'Service healthy.'
+                exit 0
+              }
+            } catch { }
+            Start-Sleep -Seconds 2
+          }
+          throw 'Service did not return HTTP 200 within 60s after deploy'

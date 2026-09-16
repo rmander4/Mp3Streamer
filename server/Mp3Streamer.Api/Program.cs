@@ -48,7 +48,9 @@ builder.Services.AddDbContext<LibraryDbContext>(options =>
 
 builder.Services.AddScoped<LibraryScanner>();
 builder.Services.AddScoped<ItunesXmlImporter>();
+builder.Services.AddScoped<TrackMetadataRefresher>();
 builder.Services.AddHostedService<LibraryWatcherService>();
+builder.Services.AddHostedService<ItunesXmlWatcherService>();
 builder.Services.AddHttpClient();
 
 builder.Services.AddCors(options =>
@@ -118,7 +120,7 @@ app.MapPost("/api/library/import-itunes", async (
         return Results.BadRequest("Choose an iTunes XML file.");
 
     await using var stream = file.OpenReadStream();
-    var result = await importer.ImportAsync(stream, ct);
+    var result = await importer.ImportAsync(stream, removeMissing: false, ct);
     return Results.Ok(result);
 }).DisableAntiforgery();
 

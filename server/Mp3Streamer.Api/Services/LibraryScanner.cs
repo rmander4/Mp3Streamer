@@ -41,43 +41,18 @@ public class LibraryScanner(LibraryDbContext db, IConfiguration config, ILogger<
                     continue;
                 }
 
-                var tag = tagFile.Tag;
-                var properties = tagFile.Properties;
-                var rating = ReadRating(tagFile);
-
                 if (existing is null)
                 {
-                    db.Tracks.Add(new Track
-                    {
-                        FilePath = path,
-                        Title = string.IsNullOrWhiteSpace(tag.Title) ? Path.GetFileNameWithoutExtension(path) : tag.Title,
-                        Artist = tag.FirstPerformer,
-                        AlbumArtist = tag.FirstAlbumArtist ?? tag.FirstPerformer,
-                        Album = tag.Album,
-                        Genre = tag.FirstGenre,
-                        TrackNumber = tag.Track == 0 ? null : (int)tag.Track,
-                        Year = tag.Year == 0 ? null : (int)tag.Year,
-                        DurationSeconds = properties.Duration.TotalSeconds,
-                        FileSizeBytes = fileInfo.Length,
-                        DateAdded = DateTime.UtcNow,
-                        HasEmbeddedArt = tag.Pictures.Length > 0,
-                        Rating = rating
-                    });
+                    var track = new Track { FilePath = path, DateAdded = DateTime.UtcNow };
+                    TrackTagMapper.Apply(track, tagFile, fileInfo);
+                    track.FileModifiedUtc = fileInfo.LastWriteTimeUtc;
+                    db.Tracks.Add(track);
                     added++;
                 }
                 else
                 {
-                    existing.Title = string.IsNullOrWhiteSpace(tag.Title) ? Path.GetFileNameWithoutExtension(path) : tag.Title;
-                    existing.Artist = tag.FirstPerformer;
-                    existing.AlbumArtist = tag.FirstAlbumArtist ?? tag.FirstPerformer;
-                    existing.Album = tag.Album;
-                    existing.Genre = tag.FirstGenre;
-                    existing.TrackNumber = tag.Track == 0 ? null : (int)tag.Track;
-                    existing.Year = tag.Year == 0 ? null : (int)tag.Year;
-                    existing.DurationSeconds = properties.Duration.TotalSeconds;
-                    existing.FileSizeBytes = fileInfo.Length;
-                    existing.HasEmbeddedArt = tag.Pictures.Length > 0;
-                    existing.Rating = rating;
+                    TrackTagMapper.Apply(existing, tagFile, fileInfo);
+                    existing.FileModifiedUtc = fileInfo.LastWriteTimeUtc;
                     existing.IsMissing = false; // covers a file reappearing at the same path after having gone missing
                     updated++;
                 }
@@ -115,15 +90,6 @@ public class LibraryScanner(LibraryDbContext db, IConfiguration config, ILogger<
         // No row yet means it's never been toggled — default to the
         // original always-remove behavior, so this is opt-in to change.
         return setting is null || bool.Parse(setting.Value);
-    }
-
-    private static int ReadRating(TagLib.File tagFile)
-    {
-        if (tagFile.GetTag(TagLib.TagTypes.Id3v2) is not TagLib.Id3v2.Tag id3v2)
-            return 0;
-
-        var popm = id3v2.GetFrames<TagLib.Id3v2.PopularimeterFrame>().FirstOrDefault();
-        return popm is null ? 0 : RatingMapper.ByteToStars(popm.Rating);
     }
 }
 

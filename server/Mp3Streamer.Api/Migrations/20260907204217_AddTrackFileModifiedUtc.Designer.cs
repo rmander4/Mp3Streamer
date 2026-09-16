@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mp3Streamer.Api.Data;
 
@@ -10,9 +11,11 @@ using Mp3Streamer.Api.Data;
 namespace Mp3Streamer.Api.Migrations
 {
     [DbContext(typeof(LibraryDbContext))]
-    partial class LibraryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907204217_AddTrackFileModifiedUtc")]
+    partial class AddTrackFileModifiedUtc
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -28,7 +31,7 @@ namespace Mp3Streamer.Api.Migrations
 
                     b.HasKey("Key");
 
-                    b.ToTable("Settings", (string)null);
+                    b.ToTable("Settings");
                 });
 
             modelBuilder.Entity("Mp3Streamer.Api.Models.PlayHistoryEntry", b =>
@@ -49,7 +52,7 @@ namespace Mp3Streamer.Api.Migrations
 
                     b.HasIndex("TrackId");
 
-                    b.ToTable("PlayHistory", (string)null);
+                    b.ToTable("PlayHistory");
                 });
 
             modelBuilder.Entity("Mp3Streamer.Api.Models.PlaybackState", b =>
@@ -71,7 +74,7 @@ namespace Mp3Streamer.Api.Migrations
 
                     b.HasIndex("TrackId");
 
-                    b.ToTable("PlaybackState", (string)null);
+                    b.ToTable("PlaybackState");
                 });
 
             modelBuilder.Entity("Mp3Streamer.Api.Models.Playlist", b =>
@@ -89,7 +92,7 @@ namespace Mp3Streamer.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Playlists", (string)null);
+                    b.ToTable("Playlists");
                 });
 
             modelBuilder.Entity("Mp3Streamer.Api.Models.PlaylistTrack", b =>
@@ -113,7 +116,7 @@ namespace Mp3Streamer.Api.Migrations
 
                     b.HasIndex("TrackId");
 
-                    b.ToTable("PlaylistTracks", (string)null);
+                    b.ToTable("PlaylistTracks");
                 });
 
             modelBuilder.Entity("Mp3Streamer.Api.Models.Track", b =>
@@ -180,7 +183,7 @@ namespace Mp3Streamer.Api.Migrations
                     b.HasIndex("FilePath")
                         .IsUnique();
 
-                    b.ToTable("Tracks", (string)null);
+                    b.ToTable("Tracks");
                 });
 
             modelBuilder.Entity("Mp3Streamer.Api.Models.PlayHistoryEntry", b =>

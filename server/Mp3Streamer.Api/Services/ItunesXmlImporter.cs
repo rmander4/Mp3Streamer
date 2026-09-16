@@ -10,7 +10,14 @@ public sealed class ItunesXmlImporter(
     LibraryDbContext db,
     ILogger<ItunesXmlImporter> logger)
 {
-    public async Task<ImportResult> ImportAsync(Stream xml, CancellationToken ct = default)
+    /// <param name="removeMissing">
+    /// When true, tracks previously imported from iTunes XML that are no longer
+    /// present in this file are hard-deleted (cascading to playlist membership
+    /// and play history) rather than just flagged <see cref="Track.IsMissing"/>.
+    /// The automatic <see cref="ItunesXmlWatcherService"/> passes true; the
+    /// manual Settings upload leaves it false.
+    /// </param>
+    public async Task<ImportResult> ImportAsync(Stream xml, bool removeMissing = false, CancellationToken ct = default)
     {
         logger.LogInformation("iTunes XML import started");
         var settings = new XmlReaderSettings
@@ -126,13 +133,27 @@ public sealed class ItunesXmlImporter(
             break;
         }
 
-        foreach (var track in existingByPath.Values.Where(t => t.CatalogSource == "ItunesXml" && !importedPaths.Contains(t.FilePath)))
-            track.IsMissing = true;
+        var gone = existingByPath.Values
+            .Where(t => t.CatalogSource == "ItunesXml" && !importedPaths.Contains(t.FilePath))
+            .ToList();
+        var removed = 0;
+        if (removeMissing)
+        {
+            db.Tracks.RemoveRange(gone);
+            removed = gone.Count;
+        }
+        else
+        {
+            foreach (var track in gone)
+                track.IsMissing = true;
+        }
 
         logger.LogInformation("Saving {Count} imported iTunes tracks to the database", imported);
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("iTunes XML import finished: {Imported} imported, {Skipped} skipped", imported, skipped);
-        return new ImportResult(imported, skipped);
+        logger.LogInformation(
+            "iTunes XML import finished: {Imported} imported, {Skipped} skipped, {Removed} removed",
+            imported, skipped, removed);
+        return new ImportResult(imported, skipped, removed);
     }
 
     private static async Task<Track?> ReadTrackAsync(XmlReader reader, CancellationToken ct)
@@ -289,4 +310,4 @@ public sealed class ItunesXmlImporter(
     }
 }
 
-public record ImportResult(int Imported, int Skipped);
+public record ImportResult(int Imported, int Skipped, int Removed = 0);

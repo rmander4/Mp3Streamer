@@ -12,8 +12,17 @@
   },
   "LibraryRootPaths": [ "C:\\path\\to\\your\\Music" ]
 
-  // Optional — only needed if importing a library from an iTunes XML export
-  // instead of scanning LibraryRootPaths from disk. See DEVLOG.md for the
-  // iTunes import feature.
-  // "CatalogSource": "ItunesXml"
+  // Optional — only needed if the catalog comes from a real iTunes / Apple
+  // Music install instead of scanning LibraryRootPaths from disk.
+  // "CatalogSource": "ItunesXml",
+
+  // Required when CatalogSource is "ItunesXml": the backend watches this file
+  // and reconciles track add/remove whenever iTunes rewrites it. The file is
+  // only ever read (copied to a temp location first) — never modified.
+  // In iTunes: Edit > Preferences > Advanced > "Share iTunes Library XML with
+  // other applications" must be enabled for this file to exist / stay current.
+  // "ItunesXml": {
+  //   "LibraryXmlPath": "C:\\Users\\you\\Music\\iTunes\\iTunes Music Library.xml",
+  //   "SyncIntervalMinutes": 15
+  // }
 }
