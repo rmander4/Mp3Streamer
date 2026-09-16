@@ -30,7 +30,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
   return (
     <nav className="sidebar">
       <div className="sidebar-header">
-        <h1 className="sidebar-title">MP3 Streamers</h1>
+        <h1 className="sidebar-title">MP3 Streamer</h1>
         <div className="sidebar-header-actions">
           <FullscreenToggle />
           <button className="settings-trigger" onClick={() => setSettingsOpen(true)} aria-label="Settings">
